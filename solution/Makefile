@@ -7,6 +7,9 @@ FUSE_CFLAGS = `pkg-config fuse --cflags --libs`
 .PHONY: all
 all: $(BINS)
 
+fuckaround:
+	$(CC) $(CFLAGS) fuckaround.c $(FUSE_CFLAGS) -o fuckaround
+
 wfs:
 	$(CC) $(CFLAGS) wfs.c $(FUSE_CFLAGS) -o wfs
 mkfs:
