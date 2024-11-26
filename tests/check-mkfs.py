@@ -86,6 +86,7 @@ def verify_mkfs(disk, inodes, datablocks):
         test_compare(disk, "datablock allocation", len(allocated_datablocks), 0)
 
         for inodep in allocated_inodes:
+            print("inodep: ", inodep)
             inode = read_inode(diskf, read_sb['iblocks'] + (inodep * blksize))
             test_compare(disk, "inode number matches allocation", inode['num'], inodep)
             for field in ['mode', 'uid', 'gid', 'atim', 'mtim', 'ctim', 'nlinks']:
