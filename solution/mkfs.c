@@ -18,15 +18,18 @@ int init_disks(int * disks, int num_disks, int num_inodes, int num_datablocks, i
 
 	time_t t_result;
 	for(int i = 0; i < num_disks; i++){
-		// INTIALIE TEH SUPER BLOCK 
+		// INIT THE SUPER BLOCK 
 		struct wfs_sb * superblock = malloc(sizeof(struct wfs_sb)); 	
 		superblock->num_inodes = num_inodes;
 		superblock->num_data_blocks = num_datablocks;
 		superblock->i_bitmap_ptr = sizeof(struct wfs_sb);
-		superblock->d_bitmap_ptr = superblock->i_bitmap_ptr + (num_inodes/8);
+
+        int i_bitmap_size = num_inodes /8;
+        int d_bitmap_size = num_datablocks /8;
+		superblock->d_bitmap_ptr = superblock->i_bitmap_ptr + (i_bitmap_size);
 
 		//inode offset is a multiple of 512
-		off_t inode_offset = sizeof(struct wfs_sb) + (num_inodes/8) + (num_datablocks/8);
+		off_t inode_offset = sizeof(struct wfs_sb) + (i_bitmap_size) + (d_bitmap_size);
 		int remainder = inode_offset % 512;
 		if(remainder != 0) inode_offset = inode_offset + (512 - remainder);
 		superblock->i_blocks_ptr = inode_offset;
@@ -36,6 +39,7 @@ int init_disks(int * disks, int num_disks, int num_inodes, int num_datablocks, i
 
 		superblock->raid_mode = raid_mode;
 		
+        //INIT THE ROOT DIR.
 		struct wfs_inode * root_inode = malloc(sizeof(struct wfs_inode));
 		root_inode->num = 0;
 		root_inode->mode = S_IRWXU;
@@ -57,7 +61,9 @@ int init_disks(int * disks, int num_disks, int num_inodes, int num_datablocks, i
 		if(lseek(disks[i], superblock->i_blocks_ptr, SEEK_SET) == -1){
 			printf("failed to lseek()\n");
 			exit(1);
-		}	if(write(disks[i], root_inode, sizeof(struct wfs_inode)) == -1){ printf("failed to write root_inode to disk[%d]: %d\n", i, disks[i]);
+		}	
+        
+        if(write(disks[i], root_inode, sizeof(struct wfs_inode)) == -1){ printf("failed to write root_inode to disk[%d]: %d\n", i, disks[i]);
 			exit(1);
 		};
 		
@@ -67,11 +73,17 @@ int init_disks(int * disks, int num_disks, int num_inodes, int num_datablocks, i
 			exit(1);
 		}	
 
-		char bitmap[] = "1000000000000000";
-		if(write(disks[i], "01", 1) == -1){
-			printf("failed to write root_inode to disk[%d]: %d\n", i, disks[i]);
+        char i_bitmap[i_bitmap_size];
+        for(int i = 0; i < i_bitmap_size; i++){
+            i_bitmap[i]= 0x00;
+        }
+        i_bitmap[0] = 0x10;
+
+        if(write(disks[i], &i_bitmap, sizeof(char) * i_bitmap_size)  == -1){ 
+            printf("failed to write bitmap to disk[%d]: %d\n", i, disks[i]);
 			exit(1);
 		};
+
 
 //		printf("test that superblock is in\n");
 //		struct wfs_sb * read_sb = malloc(sizeof(struct wfs_sb));
@@ -86,9 +98,21 @@ int init_disks(int * disks, int num_disks, int num_inodes, int num_datablocks, i
 
 }
 
+// int bitmap(void){
+//     char bitmap = 0x01;
+//     char mask = 0x01;
+//     bitmap ^= 1 << 3;
 
+//     if((bitmap & mask) == 1) printf("mask works\n");
+
+//     printf("bitmap: 0x%x\n", bitmap);
+    
+//     return 0;
+
+// }
 int main(int argc, char *argv[])
 {
+ 
 	if (argc < 3){
 		exit(1);
 	}
