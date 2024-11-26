@@ -91,7 +91,7 @@ int init_disks(int * disks, int num_disks, int num_inodes, int num_datablocks, i
 		printf("wfs_sb->num_inodes = %ld num_datablocks: %ld it_bitmap_ptr: %ld d_bitmap_ptr: %ld i_blocks_ptr: %ld d_blocks_ptr: %ld\n", read_sb->num_inodes, read_sb->num_data_blocks,read_sb->i_bitmap_ptr,read_sb->d_bitmap_ptr,read_sb->i_blocks_ptr,read_sb->d_blocks_ptr);
         char ri_bitmap [i_bitmap_size];
         pread(disks[i], ri_bitmap, i_bitmap_size * sizeof(char), read_sb->i_bitmap_ptr);
-        printf("bitmap: %s", &ri_bitmap);
+        printf("bitmap: %s", ri_bitmap);
 		close(disks[i]);				
 	}
 
