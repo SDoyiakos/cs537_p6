@@ -18,6 +18,7 @@ int init_disks(int * disks, int num_disks, int num_inodes, int num_datablocks, i
 
 	time_t t_result;
 	for(int i = 0; i < num_disks; i++){
+		// INTIALIE TEH SUPER BLOCK 
 		struct wfs_sb * superblock = malloc(sizeof(struct wfs_sb)); 	
 		superblock->num_inodes = num_inodes;
 		superblock->num_data_blocks = num_datablocks;
@@ -56,10 +57,7 @@ int init_disks(int * disks, int num_disks, int num_inodes, int num_datablocks, i
 		if(lseek(disks[i], superblock->i_blocks_ptr, SEEK_SET) == -1){
 			printf("failed to lseek()\n");
 			exit(1);
-		}	
-
-		if(write(disks[i], root_inode, sizeof(struct wfs_inode)) == -1){
-			printf("failed to write root_inode to disk[%d]: %d\n", i, disks[i]);
+		}	if(write(disks[i], root_inode, sizeof(struct wfs_inode)) == -1){ printf("failed to write root_inode to disk[%d]: %d\n", i, disks[i]);
 			exit(1);
 		};
 		
