@@ -41,7 +41,7 @@ int init_disks(int * disks, int num_disks, int num_inodes, int num_datablocks, i
 		
         //INIT THE ROOT DIR.
 		struct wfs_inode * root_inode = malloc(sizeof(struct wfs_inode));
-		root_inode->num = 1;
+		root_inode->num = 0;
 		root_inode->mode = S_IRWXU;
 		root_inode->uid = getuid();
 		root_inode->gid = getgid();
@@ -73,7 +73,7 @@ int init_disks(int * disks, int num_disks, int num_inodes, int num_datablocks, i
 			exit(1);
 		}	
 
-        char i_bitmap[i_bitmap_size];
+        unsigned char i_bitmap[i_bitmap_size];
         for(int i = 0; i < i_bitmap_size; i++){
             i_bitmap[i]= 0x00;
         }
