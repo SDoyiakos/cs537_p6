@@ -186,6 +186,6 @@ int main(int argc, char *argv[])
 	// for(int i = 0; i < num_disks; i++){
 	// 	printf("disk fd: %d\n", disks[i]);
 	// }
-	// printf("init disks: %i\n", init_disks(disks, num_disks, num_inodes, num_datablocks, raid_mode));
+	 printf("init disks: %i\n", init_disks(disks, num_disks, num_inodes, num_datablocks, raid_mode));
 	return 0; 
 }
