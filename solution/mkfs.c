@@ -77,7 +77,7 @@ int init_disks(int * disks, int num_disks, int num_inodes, int num_datablocks, i
         for(int i = 0; i < i_bitmap_size; i++){
             i_bitmap[i]= 0x00;
         }
-        i_bitmap[0] = 0x10;
+        i_bitmap[0] = 0x80;
 
         if(write(disks[i], &i_bitmap, sizeof(char) * i_bitmap_size)  == -1){ 
             printf("failed to write bitmap to disk[%d]: %d\n", i, disks[i]);
