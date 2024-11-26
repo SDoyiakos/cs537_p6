@@ -10,6 +10,10 @@ int raid_mode; // The type of RAID being used
 int inode_count; // The number of inodes
 int block_count; // The number of data blocks
 
+// Bitmaps
+void* inode_bitmap;
+void* data_bitmap;
+
 
 // Structs and vars for disk linked list
 struct Disk {
@@ -108,11 +112,35 @@ int parseArgs(int argc, char* argv[]) {
 void writeToDisk(struct wfs_sb* my_sb){
 	struct Disk* curr_disk = disk_head;
 	int curr_fd;
-	curr_fd = curr_disk->dfile;
-	write(curr_fd, my_sb, sizeof(struct wfs_sb)); // Write sb to file
+	uint64_t bitmap = 0x0;
+	//int inode_num = 0;
 
-	curr_disk = curr_disk->next;
-	close(curr_fd);	
+
+	// Allocating INode bitmap
+	inode_bitmap = malloc(inode_count/8); 
+	if(inode_bitmap == NULL) {
+		printf("Error, couldn't allocate inode bitmap\n");
+		exit(1);
+	}
+
+	// Allocationg Data bitmap
+	data_bitmap = malloc(block_count/8);
+	if(data_bitmap == NULL) {
+		printf("Error, couldn't allocate data bitmap\n");
+		exit(1);
+	}
+
+	for(int i =0; i < disk_ct; i++) {
+		curr_fd = curr_disk->dfile;
+		write(curr_fd, my_sb, sizeof(struct wfs_sb)); // Write sb to file
+		write(curr_fd, &bitmap, inode_count/8); // Write INode bitmap
+		write(curr_fd, &bitmap, block_count/8); // Write Data bitmap
+
+		
+		
+		close(curr_fd);	
+		curr_disk = curr_disk->next;
+	}
 }
 
 
@@ -144,8 +172,8 @@ int main(int argc, char* argv[]) {
 	my_sb->num_inodes = inode_count;
 	my_sb->num_data_blocks = block_count;
 	my_sb->i_bitmap_ptr = sizeof(struct wfs_sb); // IBITMAP comes right after SB
-	my_sb->d_bitmap_ptr = my_sb->i_bitmap_ptr + sizeof(uint64_t); // DBITMAP comes after SB + IBITMAP
-	my_sb->i_blocks_ptr = my_sb->d_bitmap_ptr + sizeof(uint64_t); // INODES come after DBITMAP + IBITMAP
+	my_sb->d_bitmap_ptr = my_sb->i_bitmap_ptr + inode_count; // DBITMAP comes after SB + IBITMAP
+	my_sb->i_blocks_ptr = my_sb->d_bitmap_ptr + block_count; // INODES come after DBITMAP + IBITMAP
 	my_sb->d_blocks_ptr = my_sb->i_blocks_ptr + (inode_count * sizeof(struct wfs_inode)); // DATA comes after inodes
 
 	writeToDisk(my_sb);
