@@ -41,7 +41,7 @@ int init_disks(int * disks, int num_disks, int num_inodes, int num_datablocks, i
 		
         //INIT THE ROOT DIR.
 		struct wfs_inode * root_inode = malloc(sizeof(struct wfs_inode));
-		root_inode->num = 0;
+		root_inode->num = 1;
 		root_inode->mode = S_IRWXU;
 		root_inode->uid = getuid();
 		root_inode->gid = getgid();
@@ -85,10 +85,10 @@ int init_disks(int * disks, int num_disks, int num_inodes, int num_datablocks, i
 		};
 
 
-//		printf("test that superblock is in\n");
-//		struct wfs_sb * read_sb = malloc(sizeof(struct wfs_sb));
-//		pread(disks[i], read_sb, sizeof(struct wfs_sb), 0);
-//		printf("wfs_sb->num_inodes = %ld num_datablocks: %ld it_bitmap_ptr: %ld d_bitmap_ptr: %ld i_blocks_ptr: %ld d_blocks_ptr: %ld\n", read_sb->num_inodes, read_sb->num_data_blocks,read_sb->i_bitmap_ptr,read_sb->d_bitmap_ptr,read_sb->i_blocks_ptr,read_sb->d_blocks_ptr);
+		printf("test that superblock is in\n");
+		struct wfs_sb * read_sb = malloc(sizeof(struct wfs_sb));
+		pread(disks[i], read_sb, sizeof(struct wfs_sb), 0);
+		printf("wfs_sb->num_inodes = %ld num_datablocks: %ld it_bitmap_ptr: %ld d_bitmap_ptr: %ld i_blocks_ptr: %ld d_blocks_ptr: %ld\n", read_sb->num_inodes, read_sb->num_data_blocks,read_sb->i_bitmap_ptr,read_sb->d_bitmap_ptr,read_sb->i_blocks_ptr,read_sb->d_blocks_ptr);
 
 		close(disks[i]);				
 	}
@@ -180,12 +180,12 @@ int main(int argc, char *argv[])
 	}	
 
 
-	printf("num_datablocsk: %d\n", num_datablocks);
-	printf("num_inodes: %d\n", num_inodes);
-	printf("raid_mode: %i\n", raid_mode);
-	for(int i = 0; i < num_disks; i++){
-		printf("disk fd: %d\n", disks[i]);
-	}
-	printf("init disks: %i\n", init_disks(disks, num_disks, num_inodes, num_datablocks, raid_mode));
+	// printf("num_datablocsk: %d\n", num_datablocks);
+	// printf("num_inodes: %d\n", num_inodes);
+	// printf("raid_mode: %i\n", raid_mode);
+	// for(int i = 0; i < num_disks; i++){
+	// 	printf("disk fd: %d\n", disks[i]);
+	// }
+	// printf("init disks: %i\n", init_disks(disks, num_disks, num_inodes, num_datablocks, raid_mode));
 	return 0; 
 }
