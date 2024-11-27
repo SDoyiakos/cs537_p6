@@ -102,6 +102,14 @@ int init_disks(int * disks, int num_disks, int num_inodes, int num_datablocks, i
 		pread(disks[i], read_inode, sizeof(struct wfs_inode), read_sb->i_blocks_ptr);
 		printf("root inode: \n number: %d\n", read_inode->num);
 
+		int file_size = lseek(disks[i], 0, SEEK_END);
+		printf("filsesize: %d\n", file_size);
+		printf("size requested %d\n", ((512 * num_datablocks) + (num_inodes * 512)));
+		if(file_size <= ((512 * num_datablocks) + (512 * num_inodes))){
+			printf("too many blocks");
+			exit(-1);
+		}	
+
 		close(disks[i]);				
 	}
 
@@ -197,6 +205,12 @@ int main(int argc, char *argv[])
 		printf("need at least 2 disks");
 		exit(1);
 	}
+
+	if((raid_mode < 0) | (raid_mode > 1)){
+		printf("invalid raid mode");
+		exit(1);
+	}
+
 
 	// printf("num_datablocsk: %d\n", num_datablocks);
 	// printf("num_inodes: %d\n", num_inodes);
