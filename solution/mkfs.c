@@ -4,6 +4,8 @@
 #include <stdint.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <errno.h>
+#include <sys/stat.h>
 #include "wfs.h"
 
 int raid_mode; // The type of RAID being used
@@ -11,8 +13,8 @@ int inode_count; // The number of inodes
 int block_count; // The number of data blocks
 
 // Bitmaps
-void* inode_bitmap;
-void* data_bitmap;
+char* inode_bitmap;
+char* data_bitmap;
 
 
 // Structs and vars for disk linked list
@@ -58,7 +60,7 @@ int parseArgs(int argc, char* argv[]) {
 			new_disk = malloc(sizeof(struct Disk));
 			if(new_disk == NULL) {
 				printf("Error, disk could not be allocated\n");
-				exit(1);
+				exit(-1);
 			}
 
 			// Insert new disk data
@@ -77,9 +79,8 @@ int parseArgs(int argc, char* argv[]) {
 			disk_head->dfile = open(argv[i+1], O_RDWR);
 			if(disk_head->dfile == -1) {
 				printf("Error opening file\n");
-				exit(1);
-			}
-			
+				exit(-1);
+			}	
 		}
 		else if(strcmp(curr_arg, "-i") == 0) {
 			inode_count = atoi(argv[i+1]);
@@ -113,45 +114,88 @@ void writeToDisk(struct wfs_sb* my_sb){
 	struct Disk* curr_disk = disk_head;
 	int curr_fd;
 	struct wfs_inode curr_inode;
-
+	time_t curr_time;
 
 	// Allocating INode bitmap
 	inode_bitmap = calloc(inode_count/8, 1); 
 	if(inode_bitmap == NULL) {
 		printf("Error, couldn't allocate inode bitmap\n");
-		exit(1);
+		exit(-1);
 	}
+	*(inode_bitmap  + (inode_count/8) - 1) = 1; // Setting root
 
 	// Allocating Data bitmap
 	data_bitmap = calloc(block_count/8, 1);
 	if(data_bitmap == NULL) {
 		printf("Error, couldn't allocate data bitmap\n");
-		exit(1);
+		exit(-1);
 	}
-
 	
 	// Do write for each disk
 	for(int i =0; i < disk_ct; i++) {
 		curr_fd = curr_disk->dfile;
-		write(curr_fd, my_sb, sizeof(struct wfs_sb)); // Write sb to file
-		write(curr_fd, &inode_bitmap, inode_count/8); // Write INode bitmap
-		write(curr_fd, &data_bitmap, block_count/8); // Write Data bitmap
 
-		
+		// Writing sb
+		if(write(curr_fd, my_sb, sizeof(struct wfs_sb)) == -1) {
+			printf("Error writing to disk image\n");
+			exit(-1);
+		} 
+
+		// Go to offset of inode bitmap
+		lseek(curr_fd, my_sb->i_bitmap_ptr, SEEK_SET);
+
+		// Writing inode bitmap
+		if(write(curr_fd, inode_bitmap, inode_count/8) == -1) {
+			printf("Error writing to disk image\n");
+			exit(-1);
+		} 
+
+		// Go to offset of data bitmap
+		lseek(curr_fd, my_sb->d_bitmap_ptr, SEEK_SET);
+
+		// Writing data bitmap
+		if(write(curr_fd, data_bitmap, block_count/8) == -1) {
+			printf("Error writing to disk image\n");
+			exit(-1);	
+		}
+
 		// Write each inode to mem
 		for(int j = 0; j < inode_count;j++) {
+			// Go to next inode offset
 			lseek(curr_fd, my_sb->i_blocks_ptr + (j * BLOCK_SIZE), SEEK_SET);
 			curr_inode.num = j; // Set inode num
-			curr_inode.nlinks = 0; // Set default 0 links
-			write(curr_fd, &curr_inode, sizeof(struct wfs_inode));
+			// Updating root inode
+			if(curr_inode.num == 0) {
+				curr_inode.nlinks = 1;
+				curr_inode.size = 0;
+				curr_inode.mode = S_IFDIR;
+				curr_inode.uid = getuid();
+				curr_inode.gid = getgid();
+				curr_time = time(&curr_time);
+				curr_inode.atim = curr_time;
+				curr_inode.mtim = curr_time;
+				curr_inode.ctim = curr_time;
+				
+			}
+			else {
+			curr_inode.nlinks = 0; // Set default 0 links	
+			}
+
+			// Writing inode
+			if(write(curr_fd, &curr_inode, sizeof(struct wfs_inode)) == -1) {
+				printf("Error failed to write to disk image\n");
+				exit(-1);
+			}
 		}
 
 		// Write blocks with garbage data?
 		lseek(curr_fd, my_sb->d_blocks_ptr, SEEK_SET);
 		for(int k = 0;k < block_count * BLOCK_SIZE;k++) {
-			//write(curr_fd, "0", 1);
+			if(write(curr_fd, "0", 1) == -1) {
+				printf("Error failed to write to disk image\n");
+				exit(-1);
+			}
 		}
-		
 		close(curr_fd);	
 		curr_disk = curr_disk->next;
 	}
@@ -169,7 +213,7 @@ int main(int argc, char* argv[]) {
 	disk_head = malloc(sizeof(struct Disk));
 	if(disk_head == NULL) {
 		printf("Error could not allocate space for disks\n");
-		exit(1);
+		exit(-1);
 	}
 
 	
@@ -179,7 +223,7 @@ int main(int argc, char* argv[]) {
 	struct wfs_sb* my_sb = malloc(sizeof(struct wfs_sb));
 	if(my_sb == NULL) {
 		printf("Error, couldn't allocate header\n");
-		exit(1);
+		exit(-1);
 	}
 
 	int write_offset;
@@ -193,10 +237,6 @@ int main(int argc, char* argv[]) {
 	my_sb->d_bitmap_ptr = my_sb->i_bitmap_ptr + (inode_count/8); // DBITMAP comes after SB + IBITMAP
 	my_sb->i_blocks_ptr = write_offset;
 	my_sb->d_blocks_ptr = my_sb->i_blocks_ptr + (BLOCK_SIZE * my_sb->num_inodes);
-
-
-	printf("I-bitmap at 0x%x\nD-bitmap at 0x%x\n", (unsigned int)my_sb->i_bitmap_ptr, (unsigned int)my_sb->d_bitmap_ptr);
 	writeToDisk(my_sb);
-	
 	return 0;
 }
