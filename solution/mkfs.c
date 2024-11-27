@@ -158,7 +158,7 @@ void writeToDisk(struct wfs_sb* my_sb){
 		printf("Error, couldn't allocate inode bitmap\n");
 		exit(-1);
 	}
-	*(inode_bitmap) = 128; // Setting root in bitmap
+	*(inode_bitmap) = 1; // Setting root in bitmap
 
 	// Allocating Data bitmap
 	data_bitmap = calloc(block_count/8, 1); // Zero out bitmap
@@ -219,48 +219,28 @@ void writeToDisk(struct wfs_sb* my_sb){
 			exit(-1);	
 		}
 
-		// Write each inode to mem
-		for(int j = 0; j < inode_count;j++) {
-			// Go to next inode offset
-			if(lseek(curr_fd, my_sb->i_blocks_ptr + (j * BLOCK_SIZE), SEEK_SET) == -1) {
-				exit(-1);
-			}
-			curr_inode.num = j; // Set inode num
-			
-			// Updating root inode
-			if(curr_inode.num == 0) {
-				curr_inode.nlinks = 1;
-				curr_inode.size = 0;
-				curr_inode.mode = S_IRWXU| S_IFDIR;
-				curr_inode.uid = getuid();
-				curr_inode.gid = getgid();
-				curr_time = time(&curr_time);
-				curr_inode.atim = curr_time;
-				curr_inode.mtim = curr_time;
-				curr_inode.ctim = curr_time;
-				
-			}
-
-			// Writing inode
-			if(write(curr_fd, &curr_inode, sizeof(struct wfs_inode)) == -1) {
-				printf("%s", write_error);
-				exit(-1);
-			}
+		// Go to next inode offset
+		if(lseek(curr_fd, my_sb->i_blocks_ptr, SEEK_SET) == -1) {
+			exit(-1);
 		}
+		curr_inode.num = 0; // Set inode num
+		
+		curr_inode.nlinks = 1;
+		curr_inode.size = 0;
+		curr_inode.mode = S_IRWXU|S_IFDIR;
+		curr_inode.uid = getuid();
+		curr_inode.gid = getgid();
+		curr_time = time(&curr_time);
+		curr_inode.atim = curr_time;
+		curr_inode.mtim = curr_time;
+		curr_inode.ctim = curr_time;
 
-		// Seet to data region
-		if(lseek(curr_fd, my_sb->d_blocks_ptr, SEEK_SET) == -1) {
-			printf("%s", seek_error);
+		// Writing inode
+		if(write(curr_fd, &curr_inode, sizeof(struct wfs_inode)) == -1) {
+			printf("%s", write_error);
 			exit(-1);
 		}
 
-		// Write empty data to blocks
-		for(int k = 0;k < block_count * BLOCK_SIZE;k++) {
-			if(write(curr_fd, "\0", 1) == -1) {
-				printf("%s", write_error);
-				exit(-1);
-			}
-		}
 		free(buf); // Free the buffer for file stats
 		curr_disk = curr_disk->next;
 	}
