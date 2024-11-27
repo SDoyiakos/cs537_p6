@@ -45,43 +45,7 @@ typedef unsigned long  u_long;
 #define A_KAUTH_FILESEC_XATTR A_PREFIX ".apple.system.Security"
 #define XATTR_APPLE_PREFIX   "com.apple."
 
-
-static int xmp_getattr(const char *path, struct stat *stbuf)
-{
-	int res;
-
-	res = lstat(path, stbuf);
-	if (res == -1)
-		return -errno;
-
-	return 0;
-}
-
-static int xmp_access(const char *path, int mask)
-{
-	int res;
-
-	res = access(path, mask);
-	if (res == -1)
-		return -errno;
-
-	return 0;
-}
-
-static int xmp_readlink(const char *path, char *buf, size_t size)
-{
-	int res;
-
-	res = readlink(path, buf, size - 1);
-	if (res == -1)
-		return -errno;
-
-	buf[res] = '\0';
-	return 0;
-}
-
-
-static int xmp_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
+static int wfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 			   off_t offset, struct fuse_file_info *fi)
 {
 	DIR *dp;
@@ -107,7 +71,7 @@ static int xmp_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	return 0;
 }
 
-static int xmp_mknod(const char *path, mode_t mode, dev_t rdev)
+static int wfs_mknod(const char *path, mode_t mode, dev_t rdev)
 {
 	int res;
 
@@ -127,7 +91,7 @@ static int xmp_mknod(const char *path, mode_t mode, dev_t rdev)
 	return 0;
 }
 
-static int xmp_mkdir(const char *path, mode_t mode)
+static int wfs_mkdir(const char *path, mode_t mode)
 {
 	int res;
 
@@ -138,7 +102,7 @@ static int xmp_mkdir(const char *path, mode_t mode)
 	return 0;
 }
 
-static int xmp_unlink(const char *path)
+static int wfs_unlink(const char *path)
 {
 	int res;
 
@@ -149,7 +113,7 @@ static int xmp_unlink(const char *path)
 	return 0;
 }
 
-static int xmp_rmdir(const char *path)
+static int wfs_rmdir(const char *path)
 {
 	int res;
 
@@ -160,282 +124,8 @@ static int xmp_rmdir(const char *path)
 	return 0;
 }
 
-static int xmp_symlink(const char *from, const char *to)
-{
-	int res;
 
-	res = symlink(from, to);
-	if (res == -1)
-		return -errno;
-
-	return 0;
-}
-
-static int xmp_rename(const char *from, const char *to)
-{
-	int res;
-
-	res = rename(from, to);
-	if (res == -1)
-		return -errno;
-
-	return 0;
-}
-
-static int xmp_exchange(const char *path1, const char *path2, unsigned long options)
-{
-	int res;
-
-	res = exchangedata(path1, path2, options);
-	if (res == -1) {
-		return -errno;
-	}
-
-	return 0;
-}
-
-static int xmp_link(const char *from, const char *to)
-{
-	int res;
-
-	res = link(from, to);
-	if (res == -1)
-		return -errno;
-
-	return 0;
-}
-
-static int xmp_fsetattr_x(const char *path, struct setattr_x *attr,
-					struct fuse_file_info *fi)
-{
-	int res;
-	uid_t uid = -1;
-	gid_t gid = -1;
-
-	if (SETATTR_WANTS_MODE(attr)) {
-		res = lchmod(path, attr->mode);
-		if (res == -1) {
-			return -errno;
-		}
-	}
-
-	if (SETATTR_WANTS_UID(attr)) {
-		uid = attr->uid;
-	}
-
-	if (SETATTR_WANTS_GID(attr)) {
-		gid = attr->gid;
-	}
-
-	if ((uid != -1) || (gid != -1)) {
-		res = lchown(path, uid, gid);
-		if (res == -1) {
-			return -errno;
-		}
-	}
-
-	if (SETATTR_WANTS_SIZE(attr)) {
-		if (fi) {
-			res = ftruncate(fi->fh, attr->size);
-		} else {
-			res = truncate(path, attr->size);
-		}
-		if (res == -1) {
-			return -errno;
-		}
-	}
-
-	if (SETATTR_WANTS_MODTIME(attr)) {
-		struct timeval tv[2];
-		if (!SETATTR_WANTS_ACCTIME(attr)) {
-			gettimeofday(&tv[0], NULL);
-		} else {
-			tv[0].tv_sec = attr->acctime.tv_sec;
-			tv[0].tv_usec = attr->acctime.tv_nsec / 1000;
-		}
-		tv[1].tv_sec = attr->modtime.tv_sec;
-		tv[1].tv_usec = attr->modtime.tv_nsec / 1000;
-		res = utimes(path, tv);
-		if (res == -1) {
-			return -errno;
-		}
-	}
-
-	if (SETATTR_WANTS_CRTIME(attr)) {
-		struct attrlist attributes;
-
-		attributes.bitmapcount = ATTR_BIT_MAP_COUNT;
-		attributes.reserved = 0;
-		attributes.commonattr = ATTR_CMN_CRTIME;
-		attributes.dirattr = 0;
-		attributes.fileattr = 0;
-		attributes.forkattr = 0;
-		attributes.volattr = 0;
-
-		res = setattrlist(path, &attributes, &attr->crtime,
-				  sizeof(struct timespec), FSOPT_NOFOLLOW);
-
-		if (res == -1) {
-			return -errno;
-		}
-	}
-
-	if (SETATTR_WANTS_CHGTIME(attr)) {
-		struct attrlist attributes;
-
-		attributes.bitmapcount = ATTR_BIT_MAP_COUNT;
-		attributes.reserved = 0;
-		attributes.commonattr = ATTR_CMN_CHGTIME;
-		attributes.dirattr = 0;
-		attributes.fileattr = 0;
-		attributes.forkattr = 0;
-		attributes.volattr = 0;
-
-		res = setattrlist(path, &attributes, &attr->chgtime,
-				  sizeof(struct timespec), FSOPT_NOFOLLOW);
-
-		if (res == -1) {
-			return -errno;
-		}
-	}
-
-	if (SETATTR_WANTS_BKUPTIME(attr)) {
-		struct attrlist attributes;
-
-		attributes.bitmapcount = ATTR_BIT_MAP_COUNT;
-		attributes.reserved = 0;
-		attributes.commonattr = ATTR_CMN_BKUPTIME;
-		attributes.dirattr = 0;
-		attributes.fileattr = 0;
-		attributes.forkattr = 0;
-		attributes.volattr = 0;
-
-		res = setattrlist(path, &attributes, &attr->bkuptime,
-				  sizeof(struct timespec), FSOPT_NOFOLLOW);
-
-		if (res == -1) {
-			return -errno;
-		}
-	}
-
-	if (SETATTR_WANTS_FLAGS(attr)) {
-		res = lchflags(path, attr->flags);
-		if (res == -1) {
-			return -errno;
-		}
-	}
-
-	return 0;
-}
-
-static int xmp_setattr_x(const char *path, struct setattr_x *attr)
-{
-	return xmp_fsetattr_x(path, attr, (struct fuse_file_info *)0);
-}
-
-static int xmp_getxtimes(const char *path, struct timespec *bkuptime,
-				   struct timespec *crtime)
-{
-	int res = 0;
-	struct attrlist attributes;
-
-	attributes.bitmapcount = ATTR_BIT_MAP_COUNT;
-	attributes.reserved	   = 0;
-	attributes.commonattr  = 0;
-	attributes.dirattr	   = 0;
-	attributes.fileattr	   = 0;
-	attributes.forkattr	   = 0;
-	attributes.volattr	   = 0;
-
-	struct xtimeattrbuf {
-		uint32_t size;
-		struct timespec xtime;
-	} __attribute__ ((packed));
-
-	struct xtimeattrbuf buf;
-
-	attributes.commonattr = ATTR_CMN_BKUPTIME;
-	res = getattrlist(path, &attributes, &buf, sizeof(buf), FSOPT_NOFOLLOW);
-	if (res == 0) {
-		(void)memcpy(bkuptime, &(buf.xtime), sizeof(struct timespec));
-	} else {
-		(void)memset(bkuptime, 0, sizeof(struct timespec));
-	}
-
-	attributes.commonattr = ATTR_CMN_CRTIME;
-	res = getattrlist(path, &attributes, &buf, sizeof(buf), FSOPT_NOFOLLOW);
-	if (res == 0) {
-		(void)memcpy(crtime, &(buf.xtime), sizeof(struct timespec));
-	} else {
-		(void)memset(crtime, 0, sizeof(struct timespec));
-	}
-
-	return 0;
-}
-
-static int xmp_chmod(const char *path, mode_t mode)
-{
-	int res;
-
-	res = chmod(path, mode);
-	if (res == -1)
-		return -errno;
-
-	return 0;
-}
-
-static int xmp_chown(const char *path, uid_t uid, gid_t gid)
-{
-	int res;
-
-	res = lchown(path, uid, gid);
-	if (res == -1)
-		return -errno;
-
-	return 0;
-}
-
-static int xmp_truncate(const char *path, off_t size)
-{
-	int res;
-
-	res = truncate(path, size);
-	if (res == -1)
-		return -errno;
-
-	return 0;
-}
-
-static int xmp_utimens(const char *path, const struct timespec ts[2])
-{
-	int res;
-	struct timeval tv[2];
-
-	tv[0].tv_sec = ts[0].tv_sec;
-	tv[0].tv_usec = ts[0].tv_nsec / 1000;
-	tv[1].tv_sec = ts[1].tv_sec;
-	tv[1].tv_usec = ts[1].tv_nsec / 1000;
-
-	res = utimes(path, tv);
-	if (res == -1)
-		return -errno;
-
-	return 0;
-}
-
-static int xmp_open(const char *path, struct fuse_file_info *fi)
-{
-	int res;
-
-	res = open(path, fi->flags);
-	if (res == -1)
-		return -errno;
-
-	close(res);
-	return 0;
-}
-
-static int xmp_read(const char *path, char *buf, size_t size, off_t offset,
+static int wfs_read(const char *path, char *buf, size_t size, off_t offset,
 			struct fuse_file_info *fi)
 {
 	int fd;
@@ -454,7 +144,7 @@ static int xmp_read(const char *path, char *buf, size_t size, off_t offset,
 	return res;
 }
 
-static int xmp_write(const char *path, const char *buf, size_t size,
+static int wfs_write(const char *path, const char *buf, size_t size,
 			 off_t offset, struct fuse_file_info *fi)
 {
 	int fd;
@@ -473,67 +163,6 @@ static int xmp_write(const char *path, const char *buf, size_t size,
 	return res;
 }
 
-static int xmp_statfs(const char *path, struct statvfs *stbuf)
-{
-	int res;
-
-	res = statvfs(path, stbuf);
-	if (res == -1)
-		return -errno;
-
-	return 0;
-}
-
-static int xmp_release(const char *path, struct fuse_file_info *fi)
-{
-	/* Just a stub.	 This method is optional and can safely be left
-	   unimplemented */
-
-	(void) path;
-	(void) fi;
-	return 0;
-}
-
-static int xmp_fsync(const char *path, int isdatasync,
-			 struct fuse_file_info *fi)
-{
-	/* Just a stub.	 This method is optional and can safely be left
-	   unimplemented */
-
-	(void) path;
-	(void) isdatasync;
-	(void) fi;
-	return 0;
-}
-
-static int xmp_setxattr(const char *path, const char *name, const char *value,
-				  size_t size, int flags, uint32_t position)
-{
-	int res;
-
-	if (!strncmp(name, XATTR_APPLE_PREFIX, sizeof(XATTR_APPLE_PREFIX) - 1)) {
-		flags &= ~(XATTR_NOSECURITY);
-	}
-
-	if (!strcmp(name, A_KAUTH_FILESEC_XATTR)) {
-
-		char new_name[MAXPATHLEN];
-
-		memcpy(new_name, A_KAUTH_FILESEC_XATTR, sizeof(A_KAUTH_FILESEC_XATTR));
-		memcpy(new_name, G_PREFIX, sizeof(G_PREFIX) - 1);
-
-		res = setxattr(path, new_name, value, size, position, XATTR_NOFOLLOW);
-
-	} else {
-		res = setxattr(path, name, value, size, position, XATTR_NOFOLLOW);
-	}
-
-	if (res == -1) {
-		return -errno;
-	}
-
-	return 0;
-}
 
 static int wfs_getattr(const char *path, const char *name, char *value, size_t size,
 				  uint32_t position)
@@ -558,65 +187,6 @@ static int wfs_getattr(const char *path, const char *name, char *value, size_t s
 	}
 
 	return res;
-}
-
-static int xmp_listxattr(const char *path, char *list, size_t size)
-{
-	ssize_t res = listxattr(path, list, size, XATTR_NOFOLLOW);
-	if (res > 0) {
-		if (list) {
-			size_t len = 0;
-			char *curr = list;
-			do {
-				size_t thislen = strlen(curr) + 1;
-				if (strcmp(curr, G_KAUTH_FILESEC_XATTR) == 0) {
-					memmove(curr, curr + thislen, res - len - thislen);
-					res -= thislen;
-					break;
-				}
-				curr += thislen;
-				len += thislen;
-			} while (len < res);
-		}
-	}
-
-	if (res == -1) {
-		return -errno;
-	}
-
-	return res;
-}
-
-static int xmp_removexattr(const char *path, const char *name)
-{
-	int res;
-
-	if (strcmp(name, A_KAUTH_FILESEC_XATTR) == 0) {
-
-		char new_name[MAXPATHLEN];
-
-		memcpy(new_name, A_KAUTH_FILESEC_XATTR, sizeof(A_KAUTH_FILESEC_XATTR));
-		memcpy(new_name, G_PREFIX, sizeof(G_PREFIX) - 1);
-
-		res = removexattr(path, new_name, XATTR_NOFOLLOW);
-
-	} else {
-		res = removexattr(path, name, XATTR_NOFOLLOW);
-	}
-
-	if (res == -1) {
-		return -errno;
-	}
-
-	return 0;
-}
-
-static void* xmp_init(struct fuse_conn_info *conn)
-{
-	FUSE_ENABLE_SETVOLNAME(conn);
-	FUSE_ENABLE_XTIMES(conn);
-
-	return NULL;
 }
 
 
