@@ -86,19 +86,20 @@ static struct fuse_operations ops = {
 int main(int argc, char *argv[])
 {
 
-	
-	for(int i = 1; i < argc; i++){
+	int i = 0;
+	while(argv[i][0] != '-'){
 
 		//read in the disks
-		if(argv[i][0] != '-'){
-			numdisks++;
-			disks = realloc(disks, sizeof(int) * numdisks);
-			int fd = open(argv[i], O_RDWR);
-			if(fd != -1){
-				disks[i] = fd;
-			}
+		numdisks++;
+		disks = realloc(disks, sizeof(int) * numdisks);
+		int fd = open(argv[i], O_RDWR);
+		if(fd == -1){
+			printf("failed to open file\n");
+			exit(1);
 		}
-
+		disks[i] = fd;
+		i++;
+		
 	}
 
 	for(int i = 0; i < numdisks; i++){
@@ -106,6 +107,6 @@ int main(int argc, char *argv[])
 	}
 
 
-	return fuse_main(argc, argv, &ops, NULL);	
+	return fuse_main(argc, argv[i], &ops, NULL);	
 
 }
