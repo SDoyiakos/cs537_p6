@@ -54,21 +54,29 @@ int init_disks(int * disks, int num_disks, int num_inodes, int num_datablocks, i
 
 		if(write(disks[i], superblock, sizeof(struct wfs_sb)) == -1){
 			printf("failed to write superblock to disk[%d]: %d\n", i, disks[i]);
+			free(superblock);
+			free(root_inode);
 			exit(-1);
 		};
 		
 		if(lseek(disks[i], superblock->i_blocks_ptr, SEEK_SET) == -1){
 			printf("failed to lseek()\n");
+			free(superblock);
+			free(root_inode);
 			exit(-1);
 		}	
         
         if(write(disks[i], root_inode, sizeof(struct wfs_inode)) == -1){ printf("failed to write root_inode to disk[%d]: %d\n", i, disks[i]);
+			free(superblock);
+			free(root_inode);
 			exit(-1);
 		};
 		
 
 		if(lseek(disks[i], superblock->i_bitmap_ptr, SEEK_SET) == -1){
 			printf("failed to lseek()\n");
+			free(superblock);
+			free(root_inode);
 			exit(-1);
 		}	
 
@@ -80,12 +88,16 @@ int init_disks(int * disks, int num_disks, int num_inodes, int num_datablocks, i
 
         if(write(disks[i], &i_bitmap, sizeof(char) * i_bitmap_size)  == -1){ 
             printf("failed to write bitmap to disk[%d]: %d\n", i, disks[i]);
+			free(superblock);
+			free(root_inode);
 			exit(-1);
 		};
 
 		int file_size = lseek(disks[i], 0, SEEK_END);
 		if(file_size <= ((512 * num_datablocks) + (512 * num_inodes))){
 			printf("too many blocks");
+			free(superblock);
+			free(root_inode);
 			exit(-1);
 		}	
 
@@ -113,7 +125,7 @@ int main(int argc, char *argv[])
 	int * disks = NULL;
 	int num_inodes = -1;
 	int num_datablocks = -1;
-	for(int i = 0; i < argc; i++){
+	for(int i = 2; i < argc; i++){
 
 		if(argv[i][0] == '-'){
 
@@ -132,15 +144,18 @@ int main(int argc, char *argv[])
 				int fd = open(argv[++i], O_RDWR);
 				if(fd == -1){
 					printf("failed to open file %s\n", argv[i]);
+					free(disks);
 					exit(-1);
 				}	
 
 				if(disks == NULL) disks = malloc(sizeof(int));
-				if(realloc(disks, sizeof(int) * num_disks) == NULL){
-					printf("failed to reallocarray\n");
-                    free(disks);
+				int * temp = realloc(disks, sizeof(int) * num_disks);
+				if(temp == NULL){
+					printf("failed to realloc\n");
+                    free(temp);
 					exit(-1);
 				}
+				disks = temp;
 				disks[num_disks-1] = fd;
 				continue;
 			}
@@ -163,6 +178,7 @@ int main(int argc, char *argv[])
 				
 				if(num_datablocks != -1){
 					printf("multiple arguments for num_datablocks\n");
+					free(disks);
 					exit(-1);
 				}		
 				num_datablocks = atoi(argv[i + 1]);
@@ -177,11 +193,13 @@ int main(int argc, char *argv[])
 
 	if(num_disks < 2){
 		printf("need at least 2 disks");
+		free(disks);
 		exit(1);
 	}
 
 	if((raid_mode < 0) | (raid_mode > 1)){
 		printf("invalid raid mode");
+		free(disks);
 		exit(1);
 	}
 

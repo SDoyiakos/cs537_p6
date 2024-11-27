@@ -15,6 +15,9 @@ mkfs:
 	$(CC) $(CFLAGS) -o mkfs mkfs.c
 mkfs_sanitize:
 	gcc -Og -ggdb -fsanitize=address -Wall -Werror -pedantic -std=gnu18 -g -o mkfs_sanitize mkfs.c
+
+mkfs_valgind:
+	gcc -Og -ggdb -Wall -Werror -pedantic -std=gnu18 -g -o mkfs_valgrind mkfs.c
 .PHONY: clean
 clean:
 	rm -rf $(BINS)
