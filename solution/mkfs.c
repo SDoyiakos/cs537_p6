@@ -14,7 +14,6 @@
 
 
 int init_disks(int * disks, int num_disks, int num_inodes, int num_datablocks, int raid_mode){
-	printf("sizeof(struct inode) = %ld sizeof(struct sb) = %ld \n", sizeof(struct wfs_inode), sizeof(struct wfs_sb));
 
 	time_t t_result;
 	for(int i = 0; i < num_disks; i++){
@@ -111,11 +110,7 @@ int main(int argc, char *argv[])
 	
 	int raid_mode = -1;
 	int num_disks = 0;
-	int * disks = malloc(sizeof(int));
-    if(disks == NULL){
-        free(disks);
-        exit(1);
-    }
+	int * disks = NULL;
 	int num_inodes = -1;
 	int num_datablocks = -1;
 	for(int i = 0; i < argc; i++){
@@ -139,7 +134,9 @@ int main(int argc, char *argv[])
 					printf("failed to open file %s\n", argv[i]);
 					exit(-1);
 				}	
-				if(reallocarray(disks, sizeof(int), num_disks) == NULL){
+
+				if(disks == NULL) disks = malloc(sizeof(int));
+				if(realloc(disks, sizeof(int) * num_disks) == NULL){
 					printf("failed to reallocarray\n");
                     free(disks);
 					exit(-1);
