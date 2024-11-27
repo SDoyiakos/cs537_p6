@@ -55,22 +55,22 @@ int init_disks(int * disks, int num_disks, int num_inodes, int num_datablocks, i
 
 		if(write(disks[i], superblock, sizeof(struct wfs_sb)) == -1){
 			printf("failed to write superblock to disk[%d]: %d\n", i, disks[i]);
-			exit(1);
+			exit(-1);
 		};
 		
 		if(lseek(disks[i], superblock->i_blocks_ptr, SEEK_SET) == -1){
 			printf("failed to lseek()\n");
-			exit(1);
+			exit(-1);
 		}	
         
         if(write(disks[i], root_inode, sizeof(struct wfs_inode)) == -1){ printf("failed to write root_inode to disk[%d]: %d\n", i, disks[i]);
-			exit(1);
+			exit(-1);
 		};
 		
 
 		if(lseek(disks[i], superblock->i_bitmap_ptr, SEEK_SET) == -1){
 			printf("failed to lseek()\n");
-			exit(1);
+			exit(-1);
 		}	
 
         unsigned char i_bitmap[i_bitmap_size];
@@ -81,30 +81,19 @@ int init_disks(int * disks, int num_disks, int num_inodes, int num_datablocks, i
 
         if(write(disks[i], &i_bitmap, sizeof(char) * i_bitmap_size)  == -1){ 
             printf("failed to write bitmap to disk[%d]: %d\n", i, disks[i]);
-			exit(1);
+			exit(-1);
 		};
 
 
-		printf("test that superblock is in\n");
 		struct wfs_sb * read_sb = malloc(sizeof(struct wfs_sb));
 		pread(disks[i], read_sb, sizeof(struct wfs_sb), 0);
-		printf("wfs_sb->num_inodes = %ld num_datablocks: %ld it_bitmap_ptr: %ld d_bitmap_ptr: %ld i_blocks_ptr: %ld d_blocks_ptr: %ld\n", read_sb->num_inodes, read_sb->num_data_blocks,read_sb->i_bitmap_ptr,read_sb->d_bitmap_ptr,read_sb->i_blocks_ptr,read_sb->d_blocks_ptr);
-
         unsigned char *ri_bitmap = malloc(sizeof(char) * i_bitmap_size);
         pread(disks[i], ri_bitmap, i_bitmap_size * sizeof(char), read_sb->i_bitmap_ptr);
 
-        for(int i = 0; i < i_bitmap_size; i++){
-			printf("bitmap: %x\n", ri_bitmap[i]);
-        }
-		
-		printf("read the root inode\n");
 		struct wfs_inode * read_inode = malloc(sizeof(struct wfs_inode));
 		pread(disks[i], read_inode, sizeof(struct wfs_inode), read_sb->i_blocks_ptr);
-		printf("root inode: \n number: %d\n", read_inode->num);
 
 		int file_size = lseek(disks[i], 0, SEEK_END);
-		printf("filsesize: %d\n", file_size);
-		printf("size requested %d\n", ((512 * num_datablocks) + (num_inodes * 512)));
 		if(file_size <= ((512 * num_datablocks) + (512 * num_inodes))){
 			printf("too many blocks");
 			exit(-1);
@@ -118,23 +107,11 @@ int init_disks(int * disks, int num_disks, int num_inodes, int num_datablocks, i
 
 }
 
-// int bitmap(void){
-//     char bitmap = 0x01;
-//     char mask = 0x01;
-//     bitmap ^= 1 << 3;
-
-//     if((bitmap & mask) == 1) printf("mask works\n");
-
-//     printf("bitmap: 0x%x\n", bitmap);
-    
-//     return 0;
-
-// }
 int main(int argc, char *argv[])
 {
  
 	if (argc < 3){
-		exit(1);
+		exit(-1);
 	}
 	
 	int raid_mode = -1;
@@ -149,7 +126,7 @@ int main(int argc, char *argv[])
 			if(argv[i][1] == 'r'){
 				if(raid_mode != -1){
 					printf("multiple arguments for raid\n");
-					exit(1);
+					exit(-1);
 				}		
 				raid_mode = atoi(argv[i + 1]);
 				i++;
@@ -161,11 +138,11 @@ int main(int argc, char *argv[])
 				int fd = open(argv[++i], O_RDWR);
 				if(fd == -1){
 					printf("failed to open file %s\n", argv[i]);
-					exit(1);
+					exit(-1);
 				}	
 				if(reallocarray(disks, sizeof(int), num_disks) == NULL){
 					printf("failed to reallocarray\n");
-					exit(1);
+					exit(-1);
 				}
 				disks[num_disks-1] = fd;
 				continue;
@@ -175,7 +152,7 @@ int main(int argc, char *argv[])
 				
 				if(num_inodes != -1){
 					printf("multiple arguments for num_inodes\n");
-					exit(1);
+					exit(-1);
 				}		
 				num_inodes = atoi(argv[i + 1]);
 				int remainder = num_inodes % 32;
@@ -189,7 +166,7 @@ int main(int argc, char *argv[])
 				
 				if(num_datablocks != -1){
 					printf("multiple arguments for num_datablocks\n");
-					exit(1);
+					exit(-1);
 				}		
 				num_datablocks = atoi(argv[i + 1]);
 				int remainder = num_datablocks % 32;
@@ -211,13 +188,6 @@ int main(int argc, char *argv[])
 		exit(1);
 	}
 
-
-	// printf("num_datablocsk: %d\n", num_datablocks);
-	// printf("num_inodes: %d\n", num_inodes);
-	// printf("raid_mode: %i\n", raid_mode);
-	// for(int i = 0; i < num_disks; i++){
-	// 	printf("disk fd: %d\n", disks[i]);
-	// }
-	 printf("init disks: %i\n", init_disks(disks, num_disks, num_inodes, num_datablocks, raid_mode));
+	init_disks(disks, num_disks, num_inodes, num_datablocks, raid_mode);
 	return 0; 
 }
