@@ -170,6 +170,8 @@ int main(int argc, char *argv[])
 					exit(1);
 				}		
 				num_inodes = atoi(argv[i + 1]);
+				int remainder = num_inodes % 32;
+				if(remainder !=0) num_inodes = (32 -remainder) + num_inodes;
 				i++;
 				continue;
 
