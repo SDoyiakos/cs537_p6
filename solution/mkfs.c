@@ -77,7 +77,7 @@ int init_disks(int * disks, int num_disks, int num_inodes, int num_datablocks, i
         for(int i = 0; i < i_bitmap_size; i++){
             i_bitmap[i]= 0x00;
         }
-        i_bitmap[0] = 0x80;
+        i_bitmap[0] = 0x01;
 
         if(write(disks[i], &i_bitmap, sizeof(char) * i_bitmap_size)  == -1){ 
             printf("failed to write bitmap to disk[%d]: %d\n", i, disks[i]);
@@ -89,9 +89,19 @@ int init_disks(int * disks, int num_disks, int num_inodes, int num_datablocks, i
 		struct wfs_sb * read_sb = malloc(sizeof(struct wfs_sb));
 		pread(disks[i], read_sb, sizeof(struct wfs_sb), 0);
 		printf("wfs_sb->num_inodes = %ld num_datablocks: %ld it_bitmap_ptr: %ld d_bitmap_ptr: %ld i_blocks_ptr: %ld d_blocks_ptr: %ld\n", read_sb->num_inodes, read_sb->num_data_blocks,read_sb->i_bitmap_ptr,read_sb->d_bitmap_ptr,read_sb->i_blocks_ptr,read_sb->d_blocks_ptr);
-        char *ri_bitmap = malloc(sizeof(char) * i_bitmap_size);
+
+        unsigned char *ri_bitmap = malloc(sizeof(char) * i_bitmap_size);
         pread(disks[i], ri_bitmap, i_bitmap_size * sizeof(char), read_sb->i_bitmap_ptr);
-        printf("bitmap: %x\n", ri_bitmap[0]);
+
+        for(int i = 0; i < i_bitmap_size; i++){
+			printf("bitmap: %x\n", ri_bitmap[i]);
+        }
+		
+		printf("read the root inode\n");
+		struct wfs_inode * read_inode = malloc(sizeof(struct wfs_inode));
+		pread(disks[i], read_inode, sizeof(struct wfs_inode), read_sb->i_blocks_ptr);
+		printf("root inode: \n number: %d\n", read_inode->num);
+
 		close(disks[i]);				
 	}
 
