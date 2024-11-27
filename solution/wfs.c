@@ -106,7 +106,7 @@ int main(int argc, char *argv[])
 		printf("files: %d\n", disks[i]);
 	}
 
-	argv = argv[i];
+	argv = &argv[i];
 	return fuse_main(argc, argv, &ops, NULL);	
 
 }
