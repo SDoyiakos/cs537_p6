@@ -125,7 +125,7 @@ int main(int argc, char *argv[])
 	int * disks = NULL;
 	int num_inodes = -1;
 	int num_datablocks = -1;
-	for(int i = 2; i < argc; i++){
+	for(int i = 0; i < argc; i++){
 
 		if(argv[i][0] == '-'){
 
