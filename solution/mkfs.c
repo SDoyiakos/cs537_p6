@@ -191,6 +191,10 @@ int main(int argc, char *argv[])
 		}
 	}	
 
+	if(num_disks < 2){
+		printf("need at least 2 disks");
+		exit(1);
+	}
 
 	// printf("num_datablocsk: %d\n", num_datablocks);
 	// printf("num_inodes: %d\n", num_inodes);
