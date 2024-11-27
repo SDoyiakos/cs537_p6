@@ -19,12 +19,17 @@
 #include <errno.h>
 #include <sys/time.h>
 #include <sys/param.h>
+#include "wfs.h"
 
-
-int * disks;
-int numdisks = 0;
-
-
+static int * disks;
+static int numdisks = 0;
+static struct wfs_sb ** superblocks;
+static struct wfs_inode **roots;
+//static int follow_path(const char* path){
+//
+//	return 0;
+//
+//}
 static int wfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 			   off_t offset, struct fuse_file_info *fi)
 {
@@ -39,7 +44,7 @@ static int wfs_mknod(const char* path, mode_t mode, dev_t rdev)
 
 static int wfs_mkdir(const char* path, mode_t mode)
 {
-		
+			
 	return 0;
 }
 
@@ -100,20 +105,33 @@ int main(int argc, char *argv[])
 			exit(1);
 		}
 		disks[i-1] = fd;
-//		printf(" opened filed: %d\n", fd);
-//		memcpy(&disks[i-1], &fd, sizeof(int));
-//		printf("disk[%d] : %d \n", i, disks[i-1]);
 		i++;
 	}
 
-	for(int j = 0; j < numdisks; j++){
-		printf("file[%d]: %d\n",j, disks[j]);
-	}
+	//INIT SUPERBLOCKS AND ROOT 
+	roots = malloc(sizeof(struct wfs_inode*) * numdisks);
+	superblocks = malloc(sizeof(struct wfs_sb*) * numdisks);
+	for(int i = 0; i < numdisks; i++){
+		superblocks[i] = malloc(sizeof(struct wfs_sb));
+		roots[i] = malloc(sizeof(struct wfs_inode));
 
-	printf("i: %d\n", i);
-	for(int h = 0; h < argc; h++){
-		printf("argv[%d]: %s\n", h, argv[h]);
-	}
+		if(pread(disks[i], superblocks[i], sizeof(struct wfs_sb), 0) == -1){
+			printf("failed to read in superblock\n");
+			exit(1);
+		}
+
+		if(pread(disks[i], roots[i], sizeof(struct wfs_inode), superblocks[i]->i_blocks_ptr) == -1){
+			printf("failed to read in superblock\n");
+			exit(1);
+		}
+	}	
+
+	for(int i = 0; i < numdisks; i++){
+		printf("superblock[%d] num_inodes: %ld\n", i, superblocks[i]->num_inodes);
+		printf("roots[%d] inode num: %d\n", i, roots[i]->num);
+	}	
+	
+
 	argv = &argv[i];
 	return fuse_main(argc, argv, &ops, NULL);	
 
