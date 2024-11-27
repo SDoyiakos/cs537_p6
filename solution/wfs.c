@@ -9,25 +9,6 @@
   gcc -Wall `pkg-config fuse --cflags --libs` -DHAVE_SETXATTR fusexmp.c -o fusexmp
 */
 
-
-#ifdef HAVE_CONFIG_H
-#include <config.h>
-#endif
-
-#ifdef linux
-/* For pread()/pwrite() */
-#define _XOPEN_SOURCE 500
-#elif __APPLE__
-#define _GNU_SOURCE
-#endif
-
-#if defined(_POSIX_C_SOURCE)
-typedef unsigned char  u_char;
-typedef unsigned short u_short;
-typedef unsigned int   u_int;
-typedef unsigned long  u_long;
-#endif
-
 #include <fuse.h>
 #include <stdio.h>
 #include <stdlib.h>
