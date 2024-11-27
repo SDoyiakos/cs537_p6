@@ -46,13 +46,13 @@ static int wfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	return 0;
 }
 
-static int wfs_mknod(const char *path, mode_t mode, dev_t rdev)
+static int wfs_mknod(const char* path, mode_t mode, dev_t rdev)
 {
 
 	return 0;
 }
 
-static int wfs_mkdir(const char *path, mode_t mode)
+static int wfs_mkdir(const char* path, mode_t mode)
 {
 		
 	return 0;
@@ -69,21 +69,18 @@ static int wfs_rmdir(const char *path)
 }
 
 
-static int wfs_read(const char *path, char *buf, size_t size, off_t offset,
-			struct fuse_file_info *fi)
+static int wfs_read(const char* path, char *buf, size_t size, off_t offset, struct fuse_file_info* fi)
 {
 	return 0;
 }
 
-static int wfs_write(const char *path, const char *buf, size_t size,
-			 off_t offset, struct fuse_file_info *fi)
+static int wfs_write(const char* path, char *buf, size_t size, off_t offset, struct fuse_file_info* fi)
 {
 	return 0;
 }
 
 
-static int wfs_getattr(const char *path, const char *name, char *value, size_t size,
-				  uint32_t position)
+static int wfs_getattr(const char* path, struct stat* stbuf)
 {
 	return 0;
 }
