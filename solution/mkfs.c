@@ -112,31 +112,45 @@ int parseArgs(int argc, char* argv[]) {
 void writeToDisk(struct wfs_sb* my_sb){
 	struct Disk* curr_disk = disk_head;
 	int curr_fd;
-	uint64_t bitmap = 0x0;
-	//int inode_num = 0;
+	struct wfs_inode curr_inode;
 
 
 	// Allocating INode bitmap
-	inode_bitmap = malloc(inode_count/8); 
+	inode_bitmap = calloc(inode_count/8, 1); 
 	if(inode_bitmap == NULL) {
 		printf("Error, couldn't allocate inode bitmap\n");
 		exit(1);
 	}
 
-	// Allocationg Data bitmap
-	data_bitmap = malloc(block_count/8);
+	// Allocating Data bitmap
+	data_bitmap = calloc(block_count/8, 1);
 	if(data_bitmap == NULL) {
 		printf("Error, couldn't allocate data bitmap\n");
 		exit(1);
 	}
 
+	
+	// Do write for each disk
 	for(int i =0; i < disk_ct; i++) {
 		curr_fd = curr_disk->dfile;
 		write(curr_fd, my_sb, sizeof(struct wfs_sb)); // Write sb to file
-		write(curr_fd, &bitmap, inode_count/8); // Write INode bitmap
-		write(curr_fd, &bitmap, block_count/8); // Write Data bitmap
+		write(curr_fd, &inode_bitmap, inode_count/8); // Write INode bitmap
+		write(curr_fd, &data_bitmap, block_count/8); // Write Data bitmap
 
 		
+		// Write each inode to mem
+		for(int j = 0; j < inode_count;j++) {
+			lseek(curr_fd, my_sb->i_blocks_ptr + (j * BLOCK_SIZE), SEEK_SET);
+			curr_inode.num = j; // Set inode num
+			curr_inode.nlinks = 0; // Set default 0 links
+			write(curr_fd, &curr_inode, sizeof(struct wfs_inode));
+		}
+
+		// Write blocks with garbage data?
+		lseek(curr_fd, my_sb->d_blocks_ptr, SEEK_SET);
+		for(int k = 0;k < block_count * BLOCK_SIZE;k++) {
+			//write(curr_fd, "0", 1);
+		}
 		
 		close(curr_fd);	
 		curr_disk = curr_disk->next;
@@ -160,8 +174,6 @@ int main(int argc, char* argv[]) {
 
 	
 	parseArgs(argc, argv);
-	//uint64_t i_bitmap =0x0;
-	//uint64_t d_bitmap =0x0;
 
 
 	struct wfs_sb* my_sb = malloc(sizeof(struct wfs_sb));
@@ -169,13 +181,21 @@ int main(int argc, char* argv[]) {
 		printf("Error, couldn't allocate header\n");
 		exit(1);
 	}
+
+	int write_offset;
+	
 	my_sb->num_inodes = inode_count;
 	my_sb->num_data_blocks = block_count;
 	my_sb->i_bitmap_ptr = sizeof(struct wfs_sb); // IBITMAP comes right after SB
-	my_sb->d_bitmap_ptr = my_sb->i_bitmap_ptr + inode_count; // DBITMAP comes after SB + IBITMAP
-	my_sb->i_blocks_ptr = my_sb->d_bitmap_ptr + block_count; // INODES come after DBITMAP + IBITMAP
-	my_sb->d_blocks_ptr = my_sb->i_blocks_ptr + (inode_count * sizeof(struct wfs_inode)); // DATA comes after inodes
 
+	write_offset = sizeof(struct wfs_sb) + (inode_count/8) + (block_count/8);
+	write_offset = write_offset + (512 - (write_offset%512)); // Allign properly
+	my_sb->d_bitmap_ptr = my_sb->i_bitmap_ptr + (inode_count/8); // DBITMAP comes after SB + IBITMAP
+	my_sb->i_blocks_ptr = write_offset;
+	my_sb->d_blocks_ptr = my_sb->i_blocks_ptr + (BLOCK_SIZE * my_sb->num_inodes);
+
+
+	printf("I-bitmap at 0x%x\nD-bitmap at 0x%x\n", (unsigned int)my_sb->i_bitmap_ptr, (unsigned int)my_sb->d_bitmap_ptr);
 	writeToDisk(my_sb);
 	
 	return 0;
