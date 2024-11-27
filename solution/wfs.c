@@ -21,6 +21,10 @@
 #include <sys/param.h>
 
 
+int * disks;
+int numdisks = 0;
+
+
 static int wfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 			   off_t offset, struct fuse_file_info *fi)
 {
@@ -81,6 +85,27 @@ static struct fuse_operations ops = {
 
 int main(int argc, char *argv[])
 {
+
+	
+	for(int i = 1; i < argc; i++){
+
+		//read in the disks
+		if(argv[i][0] != '-'){
+			numdisks++;
+			disks = realloc(disks, sizeof(int) * numdisks);
+			int fd = open(argv[i], O_RDWR);
+			if(fd != -1){
+				disks[i] = fd;
+			}
+		}
+
+	}
+
+	for(int i = 0; i < numdisks; i++){
+		printf("files: %d\n", disks[i]);
+	}
+
+
 	return fuse_main(argc, argv, &ops, NULL);	
 
 }
