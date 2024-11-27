@@ -115,6 +115,9 @@ void writeToDisk(struct wfs_sb* my_sb){
 	int curr_fd;
 	struct wfs_inode curr_inode;
 	time_t curr_time;
+	struct stat* buf;
+	off_t file_size;
+	
 
 	// Allocating INode bitmap
 	inode_bitmap = calloc(inode_count/8, 1); 
@@ -135,6 +138,15 @@ void writeToDisk(struct wfs_sb* my_sb){
 	for(int i =0; i < disk_ct; i++) {
 		curr_fd = curr_disk->dfile;
 
+		// Retrieving file size
+		buf = malloc(sizeof(struct stat));
+		if(buf == NULL) {
+			exit(-1);
+		}
+		fstat(curr_fd, buf);
+		file_size = buf->st_size;
+
+		
 		// Writing sb
 		if(write(curr_fd, my_sb, sizeof(struct wfs_sb)) == -1) {
 			printf("Error writing to disk image\n");
@@ -142,7 +154,9 @@ void writeToDisk(struct wfs_sb* my_sb){
 		} 
 
 		// Go to offset of inode bitmap
-		lseek(curr_fd, my_sb->i_bitmap_ptr, SEEK_SET);
+		if(lseek(curr_fd, my_sb->i_bitmap_ptr, SEEK_SET) > file_size) {
+			exit(-1);
+		}
 
 		// Writing inode bitmap
 		if(write(curr_fd, inode_bitmap, inode_count/8) == -1) {
@@ -151,7 +165,9 @@ void writeToDisk(struct wfs_sb* my_sb){
 		} 
 
 		// Go to offset of data bitmap
-		lseek(curr_fd, my_sb->d_bitmap_ptr, SEEK_SET);
+		if(lseek(curr_fd, my_sb->d_bitmap_ptr, SEEK_SET) > file_size) {
+			exit(-1);
+		}
 
 		// Writing data bitmap
 		if(write(curr_fd, data_bitmap, block_count/8) == -1) {
@@ -162,7 +178,9 @@ void writeToDisk(struct wfs_sb* my_sb){
 		// Write each inode to mem
 		for(int j = 0; j < inode_count;j++) {
 			// Go to next inode offset
-			lseek(curr_fd, my_sb->i_blocks_ptr + (j * BLOCK_SIZE), SEEK_SET);
+			if(lseek(curr_fd, my_sb->i_blocks_ptr + (j * BLOCK_SIZE), SEEK_SET) > file_size) {
+				exit(-1);
+			}
 			curr_inode.num = j; // Set inode num
 			// Updating root inode
 			if(curr_inode.num == 0) {
@@ -189,7 +207,9 @@ void writeToDisk(struct wfs_sb* my_sb){
 		}
 
 		// Write blocks with garbage data?
-		lseek(curr_fd, my_sb->d_blocks_ptr, SEEK_SET);
+		if(lseek(curr_fd, my_sb->d_blocks_ptr, SEEK_SET) + (block_count * BLOCK_SIZE) > file_size) {
+			exit(-1);
+		}
 		for(int k = 0;k < block_count * BLOCK_SIZE;k++) {
 			if(write(curr_fd, "0", 1) == -1) {
 				printf("Error failed to write to disk image\n");
