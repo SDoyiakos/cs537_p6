@@ -93,12 +93,7 @@ static int wfs_mknod(const char *path, mode_t mode, dev_t rdev)
 
 static int wfs_mkdir(const char *path, mode_t mode)
 {
-	int res;
-
-	res = mkdir(path, mode);
-	if (res == -1)
-		return -errno;
-
+		
 	return 0;
 }
 
@@ -204,6 +199,7 @@ static struct fuse_operations ops = {
 
 int main(int argc, char *argv[])
 {
-	umask(0);
+	
 	return fuse_main(argc, argv, &ops, NULL);
+
 }
