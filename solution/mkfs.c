@@ -84,15 +84,6 @@ int init_disks(int * disks, int num_disks, int num_inodes, int num_datablocks, i
 			exit(-1);
 		};
 
-
-		struct wfs_sb * read_sb = malloc(sizeof(struct wfs_sb));
-		pread(disks[i], read_sb, sizeof(struct wfs_sb), 0);
-        unsigned char *ri_bitmap = malloc(sizeof(char) * i_bitmap_size);
-        pread(disks[i], ri_bitmap, i_bitmap_size * sizeof(char), read_sb->i_bitmap_ptr);
-
-		struct wfs_inode * read_inode = malloc(sizeof(struct wfs_inode));
-		pread(disks[i], read_inode, sizeof(struct wfs_inode), read_sb->i_blocks_ptr);
-
 		int file_size = lseek(disks[i], 0, SEEK_END);
 		if(file_size <= ((512 * num_datablocks) + (512 * num_inodes))){
 			printf("too many blocks");
