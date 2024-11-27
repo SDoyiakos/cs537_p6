@@ -98,15 +98,15 @@ int main(int argc, char *argv[])
 			exit(1);
 		}
 		disks[i] = fd;
+		free(argv[i]);
 		i++;
-		
 	}
 
 	for(int i = 0; i < numdisks; i++){
 		printf("files: %d\n", disks[i]);
 	}
 
-
-	return fuse_main(argc, argv[i], &ops, NULL);	
+	argv = argv[i];
+	return fuse_main(argc, argv, &ops, NULL);	
 
 }
