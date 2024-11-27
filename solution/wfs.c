@@ -55,7 +55,7 @@ static int wfs_read(const char* path, char *buf, size_t size, off_t offset, stru
 	return 0;
 }
 
-static int wfs_write(const char* path, char *buf, size_t size, off_t offset, struct fuse_file_info* fi)
+static int wfs_write(const char* path, const char *buf, size_t size, off_t offset, struct fuse_file_info* fi)
 {
 	return 0;
 }
@@ -81,7 +81,6 @@ static struct fuse_operations ops = {
 
 int main(int argc, char *argv[])
 {
-	
-	return fuse_main(argc, argv, &ops, NULL);
+	return fuse_main(argc, argv, &ops, NULL);	
 
 }
