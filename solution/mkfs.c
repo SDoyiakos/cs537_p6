@@ -90,7 +90,11 @@ int init_disks(int * disks, int num_disks, int num_inodes, int num_datablocks, i
 			exit(-1);
 		}	
 
-		close(disks[i]);				
+		close(disks[i]);	
+        free(superblock);
+        superblock = NULL;
+        free(root_inode);
+        root_inode = NULL;			
 	}
 
 	
@@ -180,5 +184,6 @@ int main(int argc, char *argv[])
 	}
 
 	init_disks(disks, num_disks, num_inodes, num_datablocks, raid_mode);
-	return 0; 
+    free(disks);
+	exit(0);
 }
