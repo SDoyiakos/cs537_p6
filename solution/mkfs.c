@@ -112,6 +112,10 @@ int main(int argc, char *argv[])
 	int raid_mode = -1;
 	int num_disks = 0;
 	int * disks = malloc(sizeof(int));
+    if(disks == NULL){
+        free(disks);
+        exit(1);
+    }
 	int num_inodes = -1;
 	int num_datablocks = -1;
 	for(int i = 0; i < argc; i++){
@@ -137,6 +141,7 @@ int main(int argc, char *argv[])
 				}	
 				if(reallocarray(disks, sizeof(int), num_disks) == NULL){
 					printf("failed to reallocarray\n");
+                    free(disks);
 					exit(-1);
 				}
 				disks[num_disks-1] = fd;
