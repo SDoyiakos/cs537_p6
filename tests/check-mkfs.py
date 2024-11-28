@@ -79,7 +79,6 @@ def verify_mkfs(disk, inodes, datablocks):
         ibit = diskf.read(ibit_size)
         allocated_inodes = find_allocations(ibit)
         test_compare(disk, "inode allocation", len(allocated_inodes), 1)
-
         # data bitmap should be empty
         dbit = diskf.read(dbit_size)
         allocated_datablocks = find_allocations(dbit)
