@@ -16,6 +16,9 @@ mkfs:
 mkfs_sanitize:
 	gcc -Og -ggdb -fsanitize=address -Wall -Werror -pedantic -std=gnu18 -g -o mkfs_sanitize mkfs.c
 
+wfs_nowarnings:
+	$(CC) -pedantic -Werror -std=gnu18 -Og -ggdb -fsanitize=address -g $(FUSE_CFLAGS)  -o wfs wfs.c
+
 mkfs_valgind:
 	gcc -Og -ggdb -Wall -Werror -pedantic -std=gnu18 -g -o mkfs_valgrind mkfs.c
 .PHONY: clean

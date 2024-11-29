@@ -21,15 +21,55 @@
 #include <sys/param.h>
 #include "wfs.h"
 
+static int raid_mode = -1;
 static int * disks;
 static int numdisks = 0;
 static struct wfs_sb ** superblocks;
 static struct wfs_inode **roots;
-//static int follow_path(const char* path){
-//
-//	return 0;
-//
-//}
+
+static char** parse_path(const char* path, int* total_tokens){
+	char * pathcpy = strdup(path);
+	if(pathcpy == NULL) {
+		printf("failed strdup\n");
+		exit(1);
+	}	
+	int num_tokens = 0;
+	int i = 0;
+	while(pathcpy[i] != '\0'){
+	
+		if(pathcpy[i] == '/'){
+			num_tokens++;
+		}
+		i++;	
+	}	
+	
+	if(pathcpy[i-1] == '/') {
+		printf("invalid path\n");
+		exit(1);
+	}
+
+	memcpy(total_tokens, &num_tokens, sizeof(int));
+
+	char ** path_split = malloc(sizeof(char*) * num_tokens);
+	if(path_split == NULL) {
+		printf("failed malloc\n");
+		exit(1);
+	}	
+	char *tok = strtok(pathcpy, "/");
+	if(tok == NULL) {
+		printf("failed strtok\n");
+		exit(1);
+	}	
+
+	i = 0;
+	while(tok){
+		path_split[i] = strdup(tok);
+		i++;
+		tok = strtok(NULL, "/");
+	}
+	free(pathcpy);
+	return path_split;
+}
 static int wfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 			   off_t offset, struct fuse_file_info *fi)
 {
@@ -44,7 +84,6 @@ static int wfs_mknod(const char* path, mode_t mode, dev_t rdev)
 
 static int wfs_mkdir(const char* path, mode_t mode)
 {
-			
 	return 0;
 }
 
@@ -90,7 +129,6 @@ static struct fuse_operations ops = {
 
 int main(int argc, char *argv[])
 {
-
 	int i = 1;
 	while(argv[i][0] != '-'){
 
