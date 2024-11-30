@@ -28,6 +28,7 @@ static unsigned char** mappings;
 static int numdisks = 0;
 static struct wfs_sb ** superblocks;
 static struct wfs_inode **roots;
+static struct wfs_inode current_inode;
 //static int follow_path(const char* path){
 //
 //	return 0;
@@ -172,30 +173,30 @@ static struct wfs_inode * dirlookup(struct wfs_inode *dp, char *name, uint *entr
 //   skipelem("a", name) = "", setting name = "a"
 //   skipelem("", name) = skipelem("////", name) = 0
 //
-//static char*
-//skipelem(char *path, char *name)
-//{ 
-//  char *s;
-//  int len;
-//  
-//  while(*path == '/')
-//    path++;
-//  if(*path == 0)
-//    return 0;
-//  s = path;
-//  while(*path != '/' && *path != 0)
-//    path++;
-//  len = path - s;
-//  if(len >= DIRSIZ)
-//    memmove(name, s, DIRSIZ);
-//  else {
-//    memmove(name, s, len);
-//    name[len] = 0;
-//  }
-//  while(*path == '/')
-//    path++;
-//  return path;
-//}
+static char*
+skipelem(char *path, char *name)
+{ 
+  char *s;
+  int len;
+  
+  while(*path == '/')
+    path++;
+  if(*path == 0)
+    return 0;
+  s = path;
+  while(*path != '/' && *path != 0)
+    path++;
+  len = path - s;
+  if(len >= DIRSIZ)
+    memmove(name, s, DIRSIZ);
+  else {
+    memmove(name, s, len);
+    name[len] = 0;
+  }
+  while(*path == '/')
+    path++;
+  return path;
+}
 
  // Look up and return the inode for a path name.
 // If parent != 0, return the inode for the parent and copy the final
@@ -236,6 +237,33 @@ static struct wfs_inode * dirlookup(struct wfs_inode *dp, char *name, uint *entr
 //  return ip;
 //}
 
+static struct wfs_inode* namex(char *path, int nameiparent, char *name){
+	struct wfs_inode *ip, *next;
+
+	if(*path == '/'){
+		ip = iget(0);
+	}else {
+		ip = current_inode;	
+	}
+
+	while((path = skipelem(path, name)) != 0){
+		if((ip->mode && S_IFDIR) == 0){
+			printf("namex failed. file is not a dir\n");
+			exit(1);
+		}
+
+		if(nameiparent && (*path == '\0')){
+			return ip;
+		}
+		
+		if((next = dirlookup(ip, name, 0)) == 0){
+			return 0;
+		}
+		ip = next;
+	}
+
+	return ip;
+}
 
 static int wfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 			   off_t offset, struct fuse_file_info *fi)
