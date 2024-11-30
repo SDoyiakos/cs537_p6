@@ -98,7 +98,7 @@ int checkIBitmap(unsigned int inum) {
 
 	inode_bitmap+= byte_dist; // Go byte_dist bytes over
 	bit_val = *inode_bitmap;
-	bit_val &= (1<<offset); // Shift over offset times
+	bit_val &= (1<<offset); // Shift over offset times and with offset val
 	if(bit_val > 0) {
 		printf("Bit Val is %d\n", bit_val);
 		return 1;
@@ -108,17 +108,52 @@ int checkIBitmap(unsigned int inum) {
 	}
 }
 
+int checkDBitmap(unsigned int dnum) {
+	int byte_dist = dnum/8; // how many byes away from start inum is
+	unsigned char offset = dnum % 8; // We want to start at lower bits
+	unsigned char* data_bitmap = mappings[0] + superblocks[0]->d_bitmap_ptr;
+	unsigned char bit_val;
+
+	data_bitmap+= byte_dist; // Go byte_dist bytes over
+	bit_val = *data_bitmap;
+	bit_val &= (1<<offset); // Shift over offset times and with offset val
+	if(bit_val > 0) {
+		printf("Bit Val is %d\n", bit_val);
+		return 1;
+	}
+	else {
+		return 0;
+	}
+}
+
+unsigned char* bget(unsigned int bnum) {
+	unsigned char* ret_val;
+	// Checking if bitmap is allocated
+	if(checkDBitmap(bnum) == 0) {
+		printf("Data Block is not allocated\n");
+		return NULL;
+	}
+
+	// Go to data offset
+	ret_val = mappings[0] + superblocks[0]->d_blocks_ptr + (bnum * BLOCK_SIZE);
+	return ret_val;
+}
+
 struct wfs_inode* iget(unsigned int inum) {
 	struct wfs_inode* ret_val;
+
+	// Checking if bitmap is allocated
 	if(checkIBitmap(inum) == 0) {
 		printf("INode is not allocated\n");
 		return NULL;
 	}
 
 	// Go to inode offset
-	ret_val = (struct wfs_inode*)(mappings[0] + superblocks[0]->i_blocks_ptr + (inum) * BLOCK_SIZE);
+	ret_val = (struct wfs_inode*)(mappings[0] + superblocks[0]->i_blocks_ptr + (inum * BLOCK_SIZE));
 	return ret_val;
 }
+
+
 
 
 int main(int argc, char *argv[])
