@@ -192,6 +192,11 @@ static struct wfs_inode * iget(int inum){
 
 	return i;
 }
+
+// If wantparent = 0, this method returns the inode at the end of the path. If wantparent != 0 it 
+// returns the parent of the inode at the end of the path. 
+// eg: wfs_namex(/a/b/c, 0, name) = inod w name c. Name = c. 
+//     wfs)namex(/a/b/c, 1, name) = inode at b. name - c
 static struct wfs_inode* wfs_namex(char* path, int wantparent, char* name){
 	struct wfs_inode *curr_i, *next_i;
 	
