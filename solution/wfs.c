@@ -90,6 +90,8 @@ static struct fuse_operations ops = {
   .readdir = wfs_readdir,
 };
 
+
+
 int checkIBitmap(unsigned int inum) {
 	int byte_dist = inum/8; // how many byes away from start inum is
 	unsigned char offset = inum % 8; // We want to start at lower bits
@@ -153,7 +155,27 @@ struct wfs_inode* iget(unsigned int inum) {
 	return ret_val;
 }
 
+int findFreeInode() {
 
+	// Iterate over all entries until one that isnt mapped is found
+	for(int i = 0;i < (int)superblocks[0]->num_inodes;i++) {
+		if(checkIBitmap(i) == 0) {
+			return i;
+		}
+	}
+	return -1; // Return -1 if no open mappings are found
+}
+
+int findFreeData() {
+
+	// Iterate over all entries until one that isnt mapped is found
+	for(int i =0; i < (int)superblocks[0]->num_data_blocks;i++) {
+		if(checkDBitmap(i) == 0) {
+			return i;
+		}
+	}
+	return -1; // Return -1 if no open mappings are found
+}
 
 
 int main(int argc, char *argv[])
@@ -215,6 +237,8 @@ int main(int argc, char *argv[])
 	// Print values at root
 	printf("Bit at index 1 is %d\n", checkIBitmap(0));
 	printf("Root nlinks is %d\n", iget(0)->nlinks);
+	printf("First open inode is %d\n", findFreeInode());
+	printf("First open data-block is %d\n", findFreeData());
 	return fuse_main(argc, argv, &ops, NULL);	
 
 }
