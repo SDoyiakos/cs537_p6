@@ -24,7 +24,7 @@
 #include "wfs.h"
 
 static int * disks;
-static void** mappings;
+static unsigned char** mappings;
 static int numdisks = 0;
 static struct wfs_sb ** superblocks;
 static struct wfs_inode **roots;
@@ -90,6 +90,36 @@ static struct fuse_operations ops = {
   .readdir = wfs_readdir,
 };
 
+int checkIBitmap(unsigned int inum) {
+	inum++; // Starting at 1 because it is easier
+	int byte_dist = inum/8; // how many byes away from start inum is
+	unsigned char offset = 8 - (inum % 8); // We want to start at lower bits
+	unsigned char* inode_bitmap = mappings[0] + superblocks[0]->i_bitmap_ptr;
+	unsigned char bit_val;
+
+	inode_bitmap+= byte_dist; // Go byte_dist bytes over
+	bit_val = *inode_bitmap;
+	bit_val &= offset;
+	if(bit_val > 0) {
+		return 1;
+	}
+	else {
+		return 0;
+	}
+}
+
+struct wfs_inode* iget(unsigned int inum) {
+	struct wfs_inode* ret_val;
+	if(checkIBitmap(inum) == 0) {
+		printf("INode is not allocated\n");
+		return NULL;
+	}
+
+	// Go to inode offset
+	ret_val = (struct wfs_inode*)(mappings[0] + superblocks[0]->i_blocks_ptr + (inum) * BLOCK_SIZE);
+	return ret_val;
+}
+
 
 int main(int argc, char *argv[])
 {
@@ -146,6 +176,9 @@ int main(int argc, char *argv[])
 	}	
 	
 	argv = &argv[i];
+
+	printf("Bit at index 0 is %d\n", checkIBitmap(0));
+	printf("Root nlinks is %d\n", iget(0)->nlinks);
 	return fuse_main(argc, argv, &ops, NULL);	
 
 }
