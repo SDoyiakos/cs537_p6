@@ -91,16 +91,16 @@ static struct fuse_operations ops = {
 };
 
 int checkIBitmap(unsigned int inum) {
-	inum++; // Starting at 1 because it is easier
 	int byte_dist = inum/8; // how many byes away from start inum is
-	unsigned char offset = 8 - (inum % 8); // We want to start at lower bits
+	unsigned char offset = inum % 8; // We want to start at lower bits
 	unsigned char* inode_bitmap = mappings[0] + superblocks[0]->i_bitmap_ptr;
 	unsigned char bit_val;
 
 	inode_bitmap+= byte_dist; // Go byte_dist bytes over
 	bit_val = *inode_bitmap;
-	bit_val &= offset;
+	bit_val &= (1<<offset); // Shift over offset times
 	if(bit_val > 0) {
+		printf("Bit Val is %d\n", bit_val);
 		return 1;
 	}
 	else {
@@ -177,7 +177,8 @@ int main(int argc, char *argv[])
 	
 	argv = &argv[i];
 
-	printf("Bit at index 0 is %d\n", checkIBitmap(0));
+	// Print values at root
+	printf("Bit at index 1 is %d\n", checkIBitmap(0));
 	printf("Root nlinks is %d\n", iget(0)->nlinks);
 	return fuse_main(argc, argv, &ops, NULL);	
 
