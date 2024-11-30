@@ -97,25 +97,63 @@ static struct wfs_inode **roots;
 //  
 //  return 0;
 //}
+int checkIBitmap(unsigned int inum) {
+	inum++; // Starting at 1 because it is easier
+	int byte_dist = inum/8; // how many byes away from start inum is
+	unsigned char offset = 8 - (inum % 8); // We want to start at lower bits
+	unsigned char* inode_bitmap = mappings[0] + superblocks[0]->i_bitmap_ptr;
+	unsigned char bit_val;
+
+	inode_bitmap+= byte_dist; // Go byte_dist bytes over
+	bit_val = *inode_bitmap;
+	bit_val &= offset;
+	if(bit_val > 0) {
+		return 1;
+	}
+	else {
+		return 0;
+	}
+}
+struct wfs_inode* iget(unsigned int inum) {
+	struct wfs_inode* ret_val;
+	if(checkIBitmap(inum) == 0) {
+		printf("INode is not allocated\n");
+		return NULL;
+	}
+
+	// Go to inode offset
+	ret_val = (struct wfs_inode*)(mappings[0] + superblocks[0]->i_blocks_ptr + (inum) * BLOCK_SIZE);
+	return ret_val;
+}
+
 static struct wfs_inode * dirlookup(struct wfs_inode *dp, char *name, uint *entry_offset) {
 	
 	struct wfs_dentry;
 	// FOR RAID 1
-	uint superblock_offset = mappings[0]
-	//struct wfs_sb * superblock = superblocks[0];	
+	unsigned char* superblock_offset = mappings[0];
+	struct wfs_sb * superblock = superblocks[0];	
 
-	if((dp->mode && SF_IFDIR) == 0){
+	if((dp->mode && S_IFDIR) == 0){
 		printf("dirlookup not in DIR\n");
 		exit(1);	
 	}
 
-	for(i = 0; i < N_BLOCKS; i++){
-		struct wfs_dentry * de = (superblock_offset) +((unsigned char)superblock->d_blocks_ptr) +((unsigned char) dp->blocks[i]);		
-		if(de->num == 0) continue;
-		if(strcmp(de->name, name) == 0){
-			if(entry_offset)entry_offset = de;	
-		
-			//TODO: return iget(dp->num);	
+	for(int i = 0; i < N_BLOCKS; i++){
+		struct wfs_dentry * dir_entry = (struct wfs_dentry *)((superblock_offset)
+								 +((unsigned char)superblock->d_blocks_ptr)
+								 +((unsigned char) dp->blocks[i]));		
+
+		if(dir_entry->num == 0){
+			 continue;
+		}
+
+		if(strcmp(dir_entry->name, name) == 0){
+
+			if(entry_offset){
+				entry_offset = (uint) dir_entry;	
+			}	
+
+			return(iget((uint)dir_entry->num));		
 		}	
 	}
 	return 0;
@@ -134,30 +172,30 @@ static struct wfs_inode * dirlookup(struct wfs_inode *dp, char *name, uint *entr
 //   skipelem("a", name) = "", setting name = "a"
 //   skipelem("", name) = skipelem("////", name) = 0
 //
-static char*
-skipelem(char *path, char *name)
-{ 
-  char *s;
-  int len;
-  
-  while(*path == '/')
-    path++;
-  if(*path == 0)
-    return 0;
-  s = path;
-  while(*path != '/' && *path != 0)
-    path++;
-  len = path - s;
-  if(len >= DIRSIZ)
-    memmove(name, s, DIRSIZ);
-  else {
-    memmove(name, s, len);
-    name[len] = 0;
-  }
-  while(*path == '/')
-    path++;
-  return path;
-}
+//static char*
+//skipelem(char *path, char *name)
+//{ 
+//  char *s;
+//  int len;
+//  
+//  while(*path == '/')
+//    path++;
+//  if(*path == 0)
+//    return 0;
+//  s = path;
+//  while(*path != '/' && *path != 0)
+//    path++;
+//  len = path - s;
+//  if(len >= DIRSIZ)
+//    memmove(name, s, DIRSIZ);
+//  else {
+//    memmove(name, s, len);
+//    name[len] = 0;
+//  }
+//  while(*path == '/')
+//    path++;
+//  return path;
+//}
 
  // Look up and return the inode for a path name.
 // If parent != 0, return the inode for the parent and copy the final
@@ -256,36 +294,6 @@ static struct fuse_operations ops = {
   .readdir = wfs_readdir,
 };
 
-int checkIBitmap(unsigned int inum) {
-	inum++; // Starting at 1 because it is easier
-	int byte_dist = inum/8; // how many byes away from start inum is
-	unsigned char offset = 8 - (inum % 8); // We want to start at lower bits
-	unsigned char* inode_bitmap = mappings[0] + superblocks[0]->i_bitmap_ptr;
-	unsigned char bit_val;
-
-	inode_bitmap+= byte_dist; // Go byte_dist bytes over
-	bit_val = *inode_bitmap;
-	bit_val &= offset;
-	if(bit_val > 0) {
-		return 1;
-	}
-	else {
-		return 0;
-	}
-}
-
-struct wfs_inode* iget(unsigned int inum) {
-	struct wfs_inode* ret_val;
-	if(checkIBitmap(inum) == 0) {
-		printf("INode is not allocated\n");
-		return NULL;
-	}
-
-	// Go to inode offset
-	ret_val = (struct wfs_inode*)(mappings[0] + superblocks[0]->i_blocks_ptr + (inum) * BLOCK_SIZE);
-	return ret_val;
-}
-
 
 int main(int argc, char *argv[])
 {
@@ -345,6 +353,11 @@ int main(int argc, char *argv[])
 
 	printf("Bit at index 0 is %d\n", checkIBitmap(0));
 	printf("Root nlinks is %d\n", iget(0)->nlinks);
+
+	printf("dirlookup() test. \n Expected: 0\n actual: ");
+	struct wfs_inode * firstentry =  dirlookup(roots[i], "hello", uint *entry_offset);
+	printf("%d\n", firstentry->num);
+	
 	return fuse_main(argc, argv, &ops, NULL);	
 
 }
