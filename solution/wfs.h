@@ -33,6 +33,8 @@ struct wfs_sb {
     off_t d_blocks_ptr;
     // Extend after this line
 	int raid_mode;
+	int total_disks;
+	int disk_order;
 };
 
 // Inode
