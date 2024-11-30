@@ -97,6 +97,29 @@ static struct wfs_inode **roots;
 //  
 //  return 0;
 //}
+static struct wfs_inode * dirlookup(struct wfs_inode *dp, char *name, uint *entry_offset) {
+	
+	struct wfs_dentry;
+	// FOR RAID 1
+	uint superblock_offset = mappings[0]
+	//struct wfs_sb * superblock = superblocks[0];	
+
+	if((dp->mode && SF_IFDIR) == 0){
+		printf("dirlookup not in DIR\n");
+		exit(1);	
+	}
+
+	for(i = 0; i < N_BLOCKS; i++){
+		struct wfs_dentry * de = (superblock_offset) +((unsigned char)superblock->d_blocks_ptr) +((unsigned char) dp->blocks[i]);		
+		if(de->num == 0) continue;
+		if(strcmp(de->name, name) == 0){
+			if(entry_offset)entry_offset = de;	
+		
+			//TODO: return iget(dp->num);	
+		}	
+	}
+	return 0;
+}
 
 
  // Copy the next path element from path into name.
@@ -111,30 +134,30 @@ static struct wfs_inode **roots;
 //   skipelem("a", name) = "", setting name = "a"
 //   skipelem("", name) = skipelem("////", name) = 0
 //
-//static char*
-//skipelem(char *path, char *name)
-//{ 
-//  char *s;
-//  int len;
-//  
-//  while(*path == '/')
-//    path++;
-//  if(*path == 0)
-//    return 0;
-//  s = path;
-//  while(*path != '/' && *path != 0)
-//    path++;
-//  len = path - s;
-//  if(len >= DIRSIZ)
-//    memmove(name, s, DIRSIZ);
-//  else {
-//    memmove(name, s, len);
-//    name[len] = 0;
-//  }
-//  while(*path == '/')
-//    path++;
-//  return path;
-//}
+static char*
+skipelem(char *path, char *name)
+{ 
+  char *s;
+  int len;
+  
+  while(*path == '/')
+    path++;
+  if(*path == 0)
+    return 0;
+  s = path;
+  while(*path != '/' && *path != 0)
+    path++;
+  len = path - s;
+  if(len >= DIRSIZ)
+    memmove(name, s, DIRSIZ);
+  else {
+    memmove(name, s, len);
+    name[len] = 0;
+  }
+  while(*path == '/')
+    path++;
+  return path;
+}
 
  // Look up and return the inode for a path name.
 // If parent != 0, return the inode for the parent and copy the final
