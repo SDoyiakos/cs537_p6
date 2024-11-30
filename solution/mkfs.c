@@ -13,6 +13,9 @@
 //initializes all disks (disk1 and disk2) to an empty filesystem with 32 inodes and 224 data blocks. The size of the inode and data bitmaps are determined by the number of blocks specified by mkfs. If mkfs finds that the disk image file is too small to accommodate the number of blocks, it should exit with return code -1. mkfs should write the superblock and root inode to the disk image./
 
 
+static int disk_order = 1;
+
+
 int init_disks(int * disks, int num_disks, int num_inodes, int num_datablocks, int raid_mode){
 
 	time_t t_result;
@@ -37,6 +40,12 @@ int init_disks(int * disks, int num_disks, int num_inodes, int num_datablocks, i
 		superblock->d_blocks_ptr = datablocks_offset;	
 
 		superblock->raid_mode = raid_mode;
+		superblock->total_disks = num_disks;
+		// Set disk number in order and increment for next disk
+		superblock->disk_order = disk_order;
+		disk_order++;
+
+		
 		
         //INIT THE ROOT DIR.
 		struct wfs_inode * root_inode = malloc(sizeof(struct wfs_inode));
@@ -108,7 +117,6 @@ int init_disks(int * disks, int num_disks, int num_inodes, int num_datablocks, i
         root_inode = NULL;			
 	}
 
-	
 	return 0;	
 
 }
