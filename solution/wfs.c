@@ -128,7 +128,6 @@ struct wfs_inode* iget(unsigned int inum) {
 
 static struct wfs_inode * dirlookup(struct wfs_inode *dp, char *name, uint *entry_offset) {
 	
-	struct wfs_dentry;
 	// FOR RAID 1
 	unsigned char* superblock_offset = mappings[0];
 	struct wfs_sb * superblock = superblocks[0];	
@@ -355,7 +354,8 @@ int main(int argc, char *argv[])
 	printf("Root nlinks is %d\n", iget(0)->nlinks);
 
 	printf("dirlookup() test. \n Expected: 0\n actual: ");
-	struct wfs_inode * firstentry =  dirlookup(roots[i], "hello", uint *entry_offset);
+	uint offset = NULL;
+	struct wfs_inode * firstentry =  dirlookup(roots[i], "hello", &offset);
 	printf("%d\n", firstentry->num);
 	
 	return fuse_main(argc, argv, &ops, NULL);	
