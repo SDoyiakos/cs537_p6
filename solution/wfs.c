@@ -22,6 +22,7 @@
 #include <sys/stat.h>
 #include <sys/mman.h>
 #include "wfs.h"
+#include <sys/mount.h>
 
 static int * disks;
 static unsigned char** mappings;
