@@ -177,7 +177,7 @@ int findFreeData() {
 	return -1; // Return -1 if no open mappings are found
 }
 
-int mapDisks(int argc, char*argv[]) {
+int mapDisks(int argc, char* argv[]) {
 	int i = 1;
 
 	// Reading disk images
@@ -238,13 +238,17 @@ int mapDisks(int argc, char*argv[]) {
 }
 
 
-int main(int argc, char *argv[])
+int main(int argc, char* argv[])
 {
 	int new_argc; // Used to pass into fuse_main
+	
+	new_argc = argc - mapDisks(argc, argv); // Gets difference of what was already read vs what isnt
+	new_argc = argc - new_argc; 
+	char* new_argv[new_argc];
 
-	new_argc = mapDisks(argc, argv);
-	argv = &argv[new_argc]; // Move argv to new offset
-	new_argc = argc - new_argc; // Gets difference of what was already read vs what isnt
+	for(int j = 0;j < new_argc; j++) {
+		new_argv[j] = argv[1 + numdisks + j];
+	}
 	
 	// Print metadata
 	for(int i = 0; i < numdisks; i++){
@@ -260,6 +264,11 @@ int main(int argc, char *argv[])
 	printf("First open inode is %d\n", findFreeInode());
 	printf("First open data-block is %d\n", findFreeData());
 	printf("Number of args after disk is %d\n", new_argc);
-	return fuse_main(new_argc, argv, &ops, NULL);	
-		
+
+
+	// Mounting disks
+	for(int j = 0; j < new_argc; j++) {
+		printf("Arg %d is %s\n", j, new_argv[j]);
+	}
+	return fuse_main(new_argc, new_argv, &ops, NULL);	
 }
