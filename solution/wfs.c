@@ -177,12 +177,11 @@ int findFreeData() {
 	return -1; // Return -1 if no open mappings are found
 }
 
-
-int main(int argc, char *argv[])
-{
-
+int mapDisks(int argc, char*argv[]) {
 	int i = 1;
-	while(i < argc && argv[i][0] != '-'){ // Read non-flags
+
+	// Reading disk images
+	while(i <= argc && argv[i][0] != '-'){ 
 
 		//read in the disks
 		printf("argv[%d]: %s\n", i, argv[i]);
@@ -197,16 +196,22 @@ int main(int argc, char *argv[])
 		disks[i-1] = fd;
 		i++;
 	}
-	mappings = malloc(sizeof(void*)* numdisks); // Allocate region for beginning ptr in mappings
+	
+	// Allocate region for beginning ptr in mappings
+	mappings = malloc(sizeof(void*)* numdisks); 
 	if(mappings == NULL) {
 		printf("Failed to allocate mapping addrs\n");
 		exit(1);
 	}
+
+	// Allocate region in mem for superblock pointers
 	superblocks = malloc(sizeof(struct wfs_sb*) * numdisks);
 	if(superblocks == NULL) {
 		printf("Failed to allocate superblocks\n");
 		exit(1);
 	}
+
+	// Allocate region in mem for root of each image
 	roots = malloc(sizeof(struct wfs_inode*) * numdisks);
 	if(roots == NULL) {
 		printf("Unable to allocate roots\n");
@@ -215,30 +220,46 @@ int main(int argc, char *argv[])
 
 	// Map every disk into memory
 	struct stat my_stat;
-	for(int i = 0; i < numdisks;i++) {
-		fstat(disks[i], &my_stat);
-		mappings[i] = mmap(NULL, my_stat.st_size, PROT_READ|PROT_WRITE, MAP_PRIVATE,disks[i], 0);
-		if(mappings[i] == MAP_FAILED) {
+	for(int k = 0; k < numdisks;k++) {
+		fstat(disks[k], &my_stat); // Get file information about disk image
+		mappings[k] = mmap(NULL, my_stat.st_size, PROT_READ|PROT_WRITE, MAP_PRIVATE,disks[k], 0); // Map this image into mem
+
+		// Check if mmap worked
+		if(mappings[k] == MAP_FAILED) {
 			printf("Error, couldn't mmap disk into memory\n");
 			exit(1);
 		}
-		superblocks[i] = (struct wfs_sb*)mappings[i];
-		roots[i] = (struct wfs_inode*)((char*)superblocks[i] + superblocks[i]->i_blocks_ptr);
-	}
 
+		// Set superblock and root according to offsets
+		superblocks[k] = (struct wfs_sb*)mappings[k];
+		roots[k] = (struct wfs_inode*)((char*)superblocks[k] + superblocks[k]->i_blocks_ptr);
+	}
+	return i;
+}
+
+
+int main(int argc, char *argv[])
+{
+	int new_argc; // Used to pass into fuse_main
+
+	new_argc = mapDisks(argc, argv);
+	argv = &argv[new_argc]; // Move argv to new offset
+	new_argc = argc - new_argc; // Gets difference of what was already read vs what isnt
+	
 	// Print metadata
 	for(int i = 0; i < numdisks; i++){
 		printf("superblock[%d] num_inodes: %ld\n", i, superblocks[i]->num_inodes);
 		printf("roots[%d] inode num: %d\n", i, roots[i]->num);
 	}	
 	
-	argv = &argv[i];
-
+	//argv = &argv[i];
+	//argc = 1;
 	// Print values at root
 	printf("Bit at index 1 is %d\n", checkIBitmap(0));
 	printf("Root nlinks is %d\n", iget(0)->nlinks);
 	printf("First open inode is %d\n", findFreeInode());
 	printf("First open data-block is %d\n", findFreeData());
-	return fuse_main(argc, argv, &ops, NULL);	
-
+	printf("Number of args after disk is %d\n", new_argc);
+	return fuse_main(new_argc, argv, &ops, NULL);	
+		
 }
