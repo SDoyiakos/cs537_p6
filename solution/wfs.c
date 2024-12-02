@@ -22,7 +22,7 @@
 #include <sys/stat.h>
 #include <sys/mman.h>
 #include "wfs.h"
-#include <sys/mount.h>
+
 
 static int * disks;
 static unsigned char** mappings;
@@ -271,5 +271,6 @@ int main(int argc, char* argv[])
 	for(int j = 0; j < new_argc; j++) {
 		printf("Arg %d is %s\n", j, new_argv[j]);
 	}
+	printf("Block size is %d\n", BLOCK_SIZE);
 	return fuse_main(new_argc, new_argv, &ops, NULL);	
 }
