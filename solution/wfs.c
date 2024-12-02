@@ -185,6 +185,7 @@ static struct wfs_inode * dirlookup(struct wfs_inode *dp, char *name, uint *entr
 int
 dirlink(struct wfs_inode *dp, char *name, uint inum)
 {
+	printf("dirlink()\n");
 	struct wfs_dentry * de;
 	struct wfs_inode *ip;
 	
@@ -194,19 +195,26 @@ dirlink(struct wfs_inode *dp, char *name, uint inum)
 	  return -1;
 	}
 	
+	printf("passes dirlookup\n");	
 	// Look for an empty dirent.
 	for(int i = 0; i < N_BLOCKS; i++){
-
+		
 		//alocate the first empty block
-		if(ip->blocks[i] == 0){
+		if(dp->blocks[i] == 0){
+			printf("allocatign new block\n");
 			int new_data_num = findFreeData();
+			dp->blocks[i] = superblocks[0]->d_blocks_ptr + (BLOCK_SIZE * new_data_num);		
 			markbitmap_d(new_data_num, 1);
-			ip->blocks[i] = superblocks[0]->d_blocks_ptr + (BLOCK_SIZE * new_data_num);		
 		}
 	
-		for (uint block_offset = ip->blocks[i]; block_offset < block_offset + BLOCK_SIZE; block_offset += sizeof(struct wfs_dentry)){
+		printf("block isnt empty\n");
+		de = (struct wfs_dentry *)( mappings[0] + dp->blocks[i]);
+		printf("de->name: %s\n", de->name);
+		for (off_t block_offset = dp->blocks[i]; block_offset < block_offset + BLOCK_SIZE; block_offset += sizeof(struct wfs_dentry)){
 			de = (struct wfs_dentry *)( mappings[0] + block_offset);
+			
 			if(de->name == NULL){
+				printf("de->name == NULL\n");
 				strcpy(de->name, name);
 				de->num = inum;
 				return 0;
@@ -216,6 +224,7 @@ dirlink(struct wfs_inode *dp, char *name, uint inum)
 
 	} 
 	
+	printf("file is full\n");
 	return -1;
 }
  // Copy the next path element from path into name.
@@ -298,9 +307,11 @@ static int wfs_mknod(const char* path, mode_t mode, dev_t rdev)
 static int wfs_mkdir(const char* path, mode_t mode)
 {
 
+	printf("wfs_mkdir()\n");
 	char * name = malloc(sizeof(char) * FILE_NAME_MAX);
 	struct wfs_inode *parent = namex(path, 1, name);			
 
+	printf("parent->num: %d\n", parent->num);
 	// initialize new directory
 	int dnum = findFreeInode();
 	struct wfs_inode * idir = (mappings[0]) +
@@ -319,11 +330,13 @@ static int wfs_mkdir(const char* path, mode_t mode)
 	idir->ctim = t_result;
 
 
+	printf("idir->num: %d\n", idir->num);
 	// LINK PARENT TO CHILD
 	dirlink(parent, name, idir->num); 
-	
+	printf("first dirklink passed\n");	
 	// LINK CHILD TO PARENT
 	dirlink(idir, "..", parent->num); 
+	printf("first dirklink passed\n");	
 	// set one datablock to parent inode
 
 	//update bitmaps
