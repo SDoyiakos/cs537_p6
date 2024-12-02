@@ -31,76 +31,13 @@ static struct wfs_sb ** superblocks;
 static struct wfs_inode **roots;
 static struct wfs_inode *current_inode;
 static int DIRSIZ;
-//static int follow_path(const char* path){
-//
-//	return 0;
-//
-//}
 
-// Find the inode with number inum on device dev
-// and return the in-memory copy. Does not lock
-// the inode and does not read it from disk.
-//static struct inode*
-//iget(uint dev, uint inum)
-//{ 
-//  struct inode *ip, *empty;
-//  
-//  acquire(&icache.lock);
-//  
-//  // Is the inode already cached?
-//  empty = 0;
-//  for(ip = &icache.inode[0]; ip < &icache.inode[NINODE]; ip++){
-//    if(ip->ref > 0 && ip->dev == dev && ip->inum == inum){
-//      ip->ref++;
-//      release(&icache.lock);
-//      return ip;
-//    }
-//    if(empty == 0 && ip->ref == 0)    // Remember empty slot.
-//      empty = ip;
-//  }
-//
-//  // Recycle an inode cache entry.
-//  if(empty == 0)
-//    panic("iget: no inodes");
-//
-//  ip = empty;
-//  ip->dev = dev;
-//  ip->inum = inum;
-//  ip->ref = 1;
-//  ip->valid = 0;
-//  release(&icache.lock);
-//
-//  return ip;
-//}
 
-// Look for a directory entry in a directory.
-// If found, set *poff to byte offset of entry.
-//struct inode*
-//dirlookup(struct inode *dp, char *name, uint *poff)
-//{ 
-//  uint off, inum;
-//  struct dirent de;
-//  
-//  if(dp->type != T_DIR)
-//    panic("dirlookup not DIR");
-//  
-//  for(off = 0; off < dp->size; off += sizeof(de)){
-//    if(readi(dp, (char*)&de, off, sizeof(de)) != sizeof(de))
-//      panic("dirlookup read");
-//    if(de.inum == 0)
-//      continue;
-//    if(namecmp(name, de.name) == 0){
-//      // entry matches path element
-//      if(poff)
-//        *poff = off;
-//      inum = de.inum;
-//      return iget(dp->dev, inum);
-//    }
-//  }
-//  
-//  return 0;
-//}
+
+
+
 int checkIBitmap(unsigned int inum) {
+
 	int byte_dist = inum/8; // how many byes away from start inum is
 	unsigned char offset = inum % 8; // We want to start at lower bits
 	unsigned char* inode_bitmap = mappings[0] + superblocks[0]->i_bitmap_ptr;
