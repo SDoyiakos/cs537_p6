@@ -36,6 +36,24 @@ static int DIRSIZ;
 
 
 
+int checkDBitmap(unsigned int inum) {
+
+	int byte_dist = inum/8; // how many byes away from start inum is
+	unsigned char offset = inum % 8; // We want to start at lower bits
+	unsigned char* data_bitmap = mappings[0] + superblocks[0]->d_bitmap_ptr;
+	unsigned char bit_val;
+
+	data_bitmap+= byte_dist; // Go byte_dist bytes over
+	bit_val = *data_bitmap;
+	bit_val &= (1<<offset); // Shift over offset times
+	if(bit_val > 0) {
+		printf("Bit Val is %d\n", bit_val);
+		return 1;
+	}
+	else {
+		return 0;
+	}
+}
 
 int checkIBitmap(unsigned int inum) {
 
@@ -56,7 +74,7 @@ int checkIBitmap(unsigned int inum) {
 	}
 }
 
-int markbitmap_b(unsigned int bnum) {
+int markbitmap_b(unsigned int bnum, int used) {
 
 	int byte_dist = bnum/8; // how many byes away from start bnum is
 	unsigned char offset = bnum % 8; // We want to start at lower bits
@@ -64,12 +82,10 @@ int markbitmap_b(unsigned int bnum) {
 	unsigned char bit_val;
 
 	blocks_bitmap+= byte_dist; // Go byte_dist bytes over
-	bit_val = *blocks_bitmap;
-	bit_val &= (1<<offset); // Shift over offset times
-	*blocks_bitmap = *blocks_bitmap | (unsigned char) 1<<offset;
+	*blocks_bitmap = *blocks_bitmap | (unsigned char) used<<offset;
 	return 0;
 }
-int markbitmap_i(unsigned int inum) {
+int markbitmap_i(unsigned int inum, int used) {
 
 	int byte_dist = inum/8; // how many byes away from start inum is
 	unsigned char offset = inum % 8; // We want to start at lower bits
@@ -77,9 +93,7 @@ int markbitmap_i(unsigned int inum) {
 	unsigned char bit_val;
 
 	inode_bitmap+= byte_dist; // Go byte_dist bytes over
-	bit_val = *inode_bitmap;
-	bit_val &= (1<<offset); // Shift over offset times
-	*inode_bitmap = *inode_bitmap | (unsigned char) 1<<offset;
+	*inode_bitmap = *inode_bitmap | (unsigned char) used<<offset;
 	return 0;
 }
 
@@ -105,16 +119,16 @@ int findFreeInode() {
     return -1; // Return -1 if no open mappings are found
 }
 
-//int findFreeData() {
-//
-//    // Iterate over all entries until one that isnt mapped is found
-//    for(int i =0; i < (int)superblocks[0]->num_data_blocks;i++) {
-//        if(checkDBitmap(i) == 0) {
-//            return i;
-//        }
-//    }
-//    return -1; // Return -1 if no open mappings are found
-//}
+int findFreeData() {
+
+    // Iterate over all entries until one that isnt mapped is found
+    for(int i =0; i < (int)superblocks[0]->num_data_blocks;i++) {
+        if(checkDBitmap(i) == 0) {
+            return i;
+        }
+    }
+    return -1; // Return -1 if no open mappings are found
+}
 
 static struct wfs_inode * dirlookup(struct wfs_inode *dp, char *name, uint *entry_offset) {
 
@@ -253,23 +267,23 @@ static int wfs_mkdir(const char* path, mode_t mode)
 	idir->ctim = t_result;
 
 	// set one datablock to parent inode
-	int parent_dir_b = findFreeBlock();
+	int parent_dir_b = findFreeData();
 	struct wfs_dentry * dir_entry =(struct wfs_dentry *) (mappings[0] + superblocks[0]->d_blocks_ptr + (512 * parent_dir_b)); 	
 	strcpy(dir_entry->name, name);
-	memcpy(dir_entry->num, parent_num);
+	memcpy(dir_entry->num, parent_dir_b, sizeof(int));
 	idir->blocks[0] = superblocks[0]->d_blocks_ptr + (512 * parent_dir_b);
 
 	// set one datablock to current inode
-	int current_dir_b = findFreeBlock();
-	wfs_dentry * dir_entry =(struct wfs_dentry *) (mappings[0] + superblocks[0]->d_blocks_ptr + (512 * current_dir_b)); 	
+	int current_dir_b = findFreeData();
+	dir_entry =(struct wfs_dentry *) (mappings[0] + superblocks[0]->d_blocks_ptr + (512 * current_dir_b)); 	
 	strcpy(dir_entry->name, name);
-	memcpy(dir_entry->num, parent_num);
+	memcpy(dir_entry->num, current_dir_b, sizeof(int));
 	idir->blocks[1] = superblocks[0]->d_blocks_ptr + (512 * current_dir_b);
 
 	//update bitmaps
-	markbitmap_i(dnum);
-	
-	return 0;
+	markbitmap_i(dnum, 1);
+	markbitmap_b(parent_dir_b, 1);
+	markbitmap_b(current_dir_b, 1);
 }
 
 static int wfs_unlink(const char *path)
@@ -327,15 +341,33 @@ int test_markbitmapi(){
 	printf("test_markbitmap()\n");
 	printf("expected: 00000001 00000000 00000000 00000000\n  actual: ");
 	print_ibitmap();
+	printf("\n");
 
-	markbitmap_i(1);
-	markbitmap_i(31);
+	markbitmap_i(1, 1);
+	markbitmap_i(31, 1);
 	printf("expected: 00000011 00000000 00000000 10000000\n  actual: ");
 	print_ibitmap();	
+	printf("\n");
 
+	markbitmap_i(1, 0);
+	markbitmap_i(31, 0);
+	printf("expected: 00000001 00000000 00000000 00000000\n  actual: ");
+	print_ibitmap();	
 	return 0;
 }
 
+int test_mkdir(){
+	
+	//inode bitmap should be updated
+
+	//data bitmaps should be updated
+
+	//directory mode should be S_IFDIR
+
+	//dir num should be 1
+
+	//blocks should point to the dataentries
+}
 int main(int argc, char *argv[])
 {
 
