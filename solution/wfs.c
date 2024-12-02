@@ -144,35 +144,6 @@ int findFreeData() {
     return -1; // Return -1 if no open mappings are found
 }
 
-// Write a new directory entry (name, inum) into the directory dp.
-int
-dirlink(struct wfs_inode *dp, char *name, uint inum)
-{
-  int off;
-  struct wfs_dentry;
-  struct wfs_inode *ip;
-
-  // Check that name is not present.
-  if((ip = dirlookup(dp, name, 0)) != 0){
-    return -1;
-  }
-
-  // Look for an empty dirent.
-  for(off = 0; off < dp->size; off += sizeof(de)){
-    if(readi(dp, (char*)&de, off, sizeof(de)) != sizeof(de))
-      panic("dirlink read");
-    if(de.inum == 0)
-      break;
-  }
-
-  strncpy(de.name, name, DIRSIZ);
-  de.inum = inum;
-  if(writei(dp, (char*)&de, off, sizeof(de)) != sizeof(de))
-    panic("dirlink");
-
-  return 0;
-}
-
 static struct wfs_inode * dirlookup(struct wfs_inode *dp, char *name, uint *entry_offset) {
 
 	// FOR RAID 1
@@ -185,27 +156,65 @@ static struct wfs_inode * dirlookup(struct wfs_inode *dp, char *name, uint *entr
 	}
 
 	for(int i = 0; i < N_BLOCKS; i++){
-		struct wfs_dentry * dir_entry = (struct wfs_dentry *)((superblock_offset)
-								 +((unsigned char)superblock->d_blocks_ptr)
-								 +((unsigned char) dp->blocks[i]));		
+		if(dp->blocks[i] == 0) continue;
 
-		
-		if(dir_entry->num == 0){
-			 continue;
-		}
+		//iterte through all dir entries in a blcok
+		struct wfs_dentry * dir_entry;
+		for(uint j = dp->blocks[i]; j < dp->blocks[i] + BLOCK_SIZE; j+= sizeof(wfs_dentry)){
+			dir_entry = (struct wfs_dentry *)((superblock_offset)
+						 +((unsigned char) j));		
 
-		if(strcmp(dir_entry->name, name) == 0){
-			if(entry_offset){
-				entry_offset = (void*)dir_entry;	
+			if(dir_entry->name ==NULL) {
+				continue;
 			}	
 
-			return(iget((uint)dir_entry->num));		
-		}	
+			if(strcmp(dir_entry->name, name) == 0){
+				if(entry_offset){
+					entry_offset = (void*)dir_entry;	
+				}	
+	
+				return(iget((uint)dir_entry->num));		
+			}	
+		}
 	}
 	return 0;
 }
 
 
+// Write a new directory entry (name, inum) into the directory dp.
+int
+dirlink(struct wfs_inode *dp, char *name, uint inum)
+{
+	struct wfs_dentry * de;
+	struct wfs_inode *ip;
+	
+	// Check that name is not present.
+	if((ip = dirlookup(dp, name, 0)) != 0){
+		printf("a file with the same name adly exists");
+	  return -1;
+	}
+	
+	// Look for an empty dirent.
+	for(int i = 0; i < N_BLOCKS; i++){
+
+		if(ip->blocks[i] == 0){
+			continue;
+		}
+	
+		for (uint block_offset = ip->blocks[i]; block_offset < block_offset + BLOCK_SIZE; block_offset += sizeof(wfs_dentry)){
+			de = (struct wfs_dentry *)( mappings[0] + block_offset);
+			if(de->name == NULL){
+				strcpy(de->name, name);
+				de->num = inum;
+				return 0;
+			}	
+
+		} 
+
+	} 
+	
+	return -1;
+}
  // Copy the next path element from path into name.
 // Return a pointer to the element following the copied one.
 // The returned path has no leading slashes,
