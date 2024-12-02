@@ -286,12 +286,9 @@ static struct fuse_operations ops = {
   .readdir = wfs_readdir,
 };
 
-
-int test_markbitmapi(){
-	printf("test_markbitmap()\n");
+void print_ibitmap(){
 	int numinodes = superblocks[0]->num_inodes;
 	unsigned char* inode_bitmap = mappings[0] + superblocks[0]->i_bitmap_ptr;
-	printf("expected: 00000001 00000000 00000000 00000000\n  actual: ");
 	for(int i = 0; i < numinodes/8; i++){
 		 for (int j = 0; j < 8; j++) {
 			 printf("%d", !!((*(inode_bitmap + i) << j) & 0x80));
@@ -299,6 +296,17 @@ int test_markbitmapi(){
 		printf(" ");
 	}
 	printf("\n");
+}
+
+int test_markbitmapi(){
+	printf("test_markbitmap()\n");
+	printf("expected: 00000001 00000000 00000000 00000000\n  actual: ");
+	print_ibitmap();
+
+	markbitmap_i(1);
+	markbitmap_i(31);
+	printf("expected: 00000011 00000000 00000000 10000000\n  actual: ");
+	print_ibitmap();	
 	return 0;
 }
 
