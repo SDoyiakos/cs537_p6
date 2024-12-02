@@ -1,4 +1,5 @@
 #define FUSE_USE_VERSION 30
+#define FILE_NAME_MAX 28
 /*
   FUSE: Filesystem in Userspace
   Copyright (C) 2001-2007  Miklos Szeredi <miklos@szeredi.hu>
@@ -28,7 +29,8 @@ static unsigned char** mappings;
 static int numdisks = 0;
 static struct wfs_sb ** superblocks;
 static struct wfs_inode **roots;
-static struct wfs_inode current_inode;
+static struct wfs_inode *current_inode;
+static int DIRSIZ;
 //static int follow_path(const char* path){
 //
 //	return 0;
@@ -151,7 +153,7 @@ static struct wfs_inode * dirlookup(struct wfs_inode *dp, char *name, uint *entr
 
 		if(strcmp(dir_entry->name, name) == 0){
 			if(entry_offset){
-				entry_offset = (uint) dir_entry;	
+				entry_offset = (void*)dir_entry;	
 			}	
 
 			return(iget((uint)dir_entry->num));		
@@ -178,7 +180,6 @@ skipelem(char *path, char *name)
 { 
   char *s;
   int len;
-  
   while(*path == '/')
     path++;
   if(*path == 0)
@@ -279,7 +280,11 @@ static int wfs_mknod(const char* path, mode_t mode, dev_t rdev)
 
 static int wfs_mkdir(const char* path, mode_t mode)
 {
-			
+
+	// get dir of path
+	char * name = malloc(sizeof(char) * FILE_NAME_MAX);
+	struct wfs_inode *parent = namex(path, 1, name);			
+		
 	return 0;
 }
 
@@ -370,6 +375,10 @@ int main(int argc, char *argv[])
 		roots[i] = (struct wfs_inode*)((char*)superblocks[i] + superblocks[i]->i_blocks_ptr);
 	}
 
+
+	// initialize currentInode
+	current_inode = roots[0];
+	DIRSIZ = superblocks[0]->num_data_blocks / superblocks[0]->num_inodes;
 	// Print metadata
 	for(int i = 0; i < numdisks; i++){
 		printf("superblock[%d] num_inodes: %ld\n", i, superblocks[i]->num_inodes);
@@ -387,6 +396,9 @@ int main(int argc, char *argv[])
 	printf("dirlookup() test. \n Expected: 0\n actual: ");
 	uint offset = NULL;
 	struct wfs_inode * firstentry =  dirlookup(roots[0], "hello", &offset);
+
+	char * name = malloc(28 * sizeof(char));	
+	printf("namex() test: \n Expected: inodeNum = 0, Name = hello \n actual: %d %s\n", namex("/hello", 1, name)->num, name); 
 	
 	return fuse_main(argc, argv, &ops, NULL);	
 
