@@ -56,6 +56,19 @@ int checkIBitmap(unsigned int inum) {
 	}
 }
 
+int markbitmap_b(unsigned int bnum) {
+
+	int byte_dist = bnum/8; // how many byes away from start bnum is
+	unsigned char offset = bnum % 8; // We want to start at lower bits
+	unsigned char* blocks_bitmap = mappings[0] + superblocks[0]->d_bitmap_ptr;
+	unsigned char bit_val;
+
+	blocks_bitmap+= byte_dist; // Go byte_dist bytes over
+	bit_val = *blocks_bitmap;
+	bit_val &= (1<<offset); // Shift over offset times
+	*blocks_bitmap = *blocks_bitmap | (unsigned char) 1<<offset;
+	return 0;
+}
 int markbitmap_i(unsigned int inum) {
 
 	int byte_dist = inum/8; // how many byes away from start inum is
@@ -239,11 +252,23 @@ static int wfs_mkdir(const char* path, mode_t mode)
 	idir->mtim = t_result;
 	idir->ctim = t_result;
 
+	// set one datablock to parent inode
+	int parent_dir_b = findFreeBlock();
+	struct wfs_dentry * dir_entry =(struct wfs_dentry *) (mappings[0] + superblocks[0]->d_blocks_ptr + (512 * parent_dir_b)); 	
+	strcpy(dir_entry->name, name);
+	memcpy(dir_entry->num, parent_num);
+	idir->blocks[0] = superblocks[0]->d_blocks_ptr + (512 * parent_dir_b);
 
+	// set one datablock to current inode
+	int current_dir_b = findFreeBlock();
+	wfs_dentry * dir_entry =(struct wfs_dentry *) (mappings[0] + superblocks[0]->d_blocks_ptr + (512 * current_dir_b)); 	
+	strcpy(dir_entry->name, name);
+	memcpy(dir_entry->num, parent_num);
+	idir->blocks[1] = superblocks[0]->d_blocks_ptr + (512 * current_dir_b);
 
-	//update ibitmap
+	//update bitmaps
 	markbitmap_i(dnum);
-			
+	
 	return 0;
 }
 
@@ -307,6 +332,7 @@ int test_markbitmapi(){
 	markbitmap_i(31);
 	printf("expected: 00000011 00000000 00000000 10000000\n  actual: ");
 	print_ibitmap();	
+
 	return 0;
 }
 
