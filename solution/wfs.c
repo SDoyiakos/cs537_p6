@@ -66,7 +66,7 @@ int markbitmap_i(unsigned int inum) {
 	inode_bitmap+= byte_dist; // Go byte_dist bytes over
 	bit_val = *inode_bitmap;
 	bit_val &= (1<<offset); // Shift over offset times
-	inode_bitmap = inode_bitmap | 1<<offset;
+	*inode_bitmap = *inode_bitmap | (unsigned char) 1<<offset;
 	return 0;
 }
 
@@ -92,16 +92,16 @@ int findFreeInode() {
     return -1; // Return -1 if no open mappings are found
 }
 
-int findFreeData() {
-
-    // Iterate over all entries until one that isnt mapped is found
-    for(int i =0; i < (int)superblocks[0]->num_data_blocks;i++) {
-        if(checkDBitmap(i) == 0) {
-            return i;
-        }
-    }
-    return -1; // Return -1 if no open mappings are found
-}
+//int findFreeData() {
+//
+//    // Iterate over all entries until one that isnt mapped is found
+//    for(int i =0; i < (int)superblocks[0]->num_data_blocks;i++) {
+//        if(checkDBitmap(i) == 0) {
+//            return i;
+//        }
+//    }
+//    return -1; // Return -1 if no open mappings are found
+//}
 
 static struct wfs_inode * dirlookup(struct wfs_inode *dp, char *name, uint *entry_offset) {
 
@@ -232,18 +232,17 @@ static int wfs_mkdir(const char* path, mode_t mode)
 	idir->mode = S_IFDIR;
 	idir->uid = getuid(); 
 	idir->gid = getgid(); 
-	idir->size = sizeof(stuct wfs_inode) + (512 * 2); 
+	idir->size = sizeof(struct wfs_inode) + (512 * 2); 
 	idir->nlinks = 1; 
 	time_t t_result = time(NULL);
 	idir->atim = t_result; 
 	idir->mtim = t_result;
 	idir->ctim = t_result;
 
-	idir_blocks = superblocks[0]->d_blocks_ptr 
 
 
 	//update ibitmap
-	markbitmap(dnum)	
+	markbitmap_i(dnum);
 			
 	return 0;
 }
@@ -286,6 +285,22 @@ static struct fuse_operations ops = {
   .write   = wfs_write,
   .readdir = wfs_readdir,
 };
+
+
+int test_markbitmapi(){
+	printf("test_markbitmap()\n");
+	int numinodes = superblocks[0]->num_inodes;
+	unsigned char* inode_bitmap = mappings[0] + superblocks[0]->i_bitmap_ptr;
+	printf("expected: 00000001 00000000 00000000 00000000\n  actual: ");
+	for(int i = 0; i < numinodes/8; i++){
+		 for (int j = 0; j < 8; j++) {
+			 printf("%d", !!((*(inode_bitmap + i) << j) & 0x80));
+		 }
+		printf(" ");
+	}
+	printf("\n");
+	return 0;
+}
 
 int main(int argc, char *argv[])
 {
@@ -360,6 +375,8 @@ int main(int argc, char *argv[])
 	char * name = malloc(28 * sizeof(char));	
 	printf("namex() test: \n Expected: inodeNum = 0, Name = hello \n actual: %d %s\n", namex("/hello", 1, name)->num, name); 
 	
+
+	test_markbitmapi();
 	return fuse_main(argc, argv, &ops, NULL);	
 
 }
