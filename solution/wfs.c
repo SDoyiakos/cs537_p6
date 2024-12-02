@@ -56,7 +56,7 @@ int checkIBitmap(unsigned int inum) {
 	}
 }
 
-int mark_bitmap(unsigned int inum) {
+int markbitmap_i(unsigned int inum) {
 
 	int byte_dist = inum/8; // how many byes away from start inum is
 	unsigned char offset = inum % 8; // We want to start at lower bits
@@ -66,14 +66,8 @@ int mark_bitmap(unsigned int inum) {
 	inode_bitmap+= byte_dist; // Go byte_dist bytes over
 	bit_val = *inode_bitmap;
 	bit_val &= (1<<offset); // Shift over offset times
-	if(bit_val > 0) {
-		printf("Bit Val is %d\n", bit_val);
-		return 1;
-	}
-	else {
-		return 0;
-	}
-
+	inode_bitmap = inode_bitmap | 1<<offset;
+	return 0;
 }
 
 struct wfs_inode* iget(unsigned int inum) {
@@ -225,13 +219,16 @@ static int wfs_mkdir(const char* path, mode_t mode)
 	// get dir of path
 	char * name = malloc(sizeof(char) * FILE_NAME_MAX);
 	struct wfs_inode *parent = namex(path, 1, name);			
-	int inum = findFreeInode();
+	int dnum = findFreeInode();
+
+
+	// initialize inode
 	
 	struct wfs_inode * idir = (mappings[0]) +
 								(uintptr_t)superblocks[0]->i_blocks_ptr +
-								(uintptr_t)(512 * inum);
+								(uintptr_t)(512 * dnum);
 	
-	idir->num = inum;
+	idir->num = dnum;
 	idir->mode = S_IFDIR;
 	idir->uid = getuid(); 
 	idir->gid = getgid(); 
@@ -245,6 +242,8 @@ static int wfs_mkdir(const char* path, mode_t mode)
 	idir_blocks = superblocks[0]->d_blocks_ptr 
 
 
+	//update ibitmap
+	markbitmap(dnum)	
 			
 	return 0;
 }
