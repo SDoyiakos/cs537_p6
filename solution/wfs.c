@@ -23,6 +23,7 @@
 #include <sys/stat.h>
 #include <sys/mman.h>
 #include "wfs.h"
+#include <stdint.h>
 
 static int * disks;
 static unsigned char** mappings;
@@ -55,6 +56,26 @@ int checkIBitmap(unsigned int inum) {
 	}
 }
 
+int mark_bitmap(unsigned int inum) {
+
+	int byte_dist = inum/8; // how many byes away from start inum is
+	unsigned char offset = inum % 8; // We want to start at lower bits
+	unsigned char* inode_bitmap = mappings[0] + superblocks[0]->i_bitmap_ptr;
+	unsigned char bit_val;
+
+	inode_bitmap+= byte_dist; // Go byte_dist bytes over
+	bit_val = *inode_bitmap;
+	bit_val &= (1<<offset); // Shift over offset times
+	if(bit_val > 0) {
+		printf("Bit Val is %d\n", bit_val);
+		return 1;
+	}
+	else {
+		return 0;
+	}
+
+}
+
 struct wfs_inode* iget(unsigned int inum) {
 	struct wfs_inode* ret_val;
 	if(checkIBitmap(inum) == 0) {
@@ -65,6 +86,27 @@ struct wfs_inode* iget(unsigned int inum) {
 	// Go to inode offset
 	ret_val = (struct wfs_inode*)(mappings[0] + superblocks[0]->i_blocks_ptr + (inum) * BLOCK_SIZE);
 	return ret_val;
+}
+int findFreeInode() {
+
+    // Iterate over all entries until one that isnt mapped is found
+    for(int i = 0;i < (int)superblocks[0]->num_inodes;i++) {
+        if(checkIBitmap(i) == 0) {
+            return i;
+        }
+    }
+    return -1; // Return -1 if no open mappings are found
+}
+
+int findFreeData() {
+
+    // Iterate over all entries until one that isnt mapped is found
+    for(int i =0; i < (int)superblocks[0]->num_data_blocks;i++) {
+        if(checkDBitmap(i) == 0) {
+            return i;
+        }
+    }
+    return -1; // Return -1 if no open mappings are found
 }
 
 static struct wfs_inode * dirlookup(struct wfs_inode *dp, char *name, uint *entry_offset) {
@@ -136,44 +178,6 @@ skipelem(char *path, char *name)
   return path;
 }
 
- // Look up and return the inode for a path name.
-// If parent != 0, return the inode for the parent and copy the final
-// path element into name, which must have room for DIRSIZ bytes.
-// Must be called inside a transaction since it calls iput().
-//static struct inode*
-//namex(char *path, int nameiparent, char *name)
-//{
-//  struct inode *ip, *next;
-//
-//  if(*path == '/')
-//    ip = iget(ROOTDEV, ROOTINO);
-//  else
-//    ip = idup(myproc()->cwd);
-//
-//  while((path = skipelem(path, name)) != 0){
-//    ilock(ip);
-//    if(ip->type != T_DIR){
-//      iunlockput(ip);
-//      return 0;
-//    }
-//    if(nameiparent && *path == '\0'){
-//      // Stop one level early.
-//      iunlock(ip);
-//      return ip;
-//    }
-//    if((next = dirlookup(ip, name, 0)) == 0){
-//      iunlockput(ip);
-//      return 0;
-//    }
-//    iunlockput(ip);
-//    ip = next;
-//  }
-//  if(nameiparent){
-//    iput(ip);
-//    return 0;
-//  }
-//  return ip;
-//}
 
 static struct wfs_inode* namex(char *path, int nameiparent, char *name){
 	struct wfs_inode *ip, *next;
@@ -221,7 +225,27 @@ static int wfs_mkdir(const char* path, mode_t mode)
 	// get dir of path
 	char * name = malloc(sizeof(char) * FILE_NAME_MAX);
 	struct wfs_inode *parent = namex(path, 1, name);			
-		
+	int inum = findFreeInode();
+	
+	struct wfs_inode * idir = (mappings[0]) +
+								(uintptr_t)superblocks[0]->i_blocks_ptr +
+								(uintptr_t)(512 * inum);
+	
+	idir->num = inum;
+	idir->mode = S_IFDIR;
+	idir->uid = getuid(); 
+	idir->gid = getgid(); 
+	idir->size = sizeof(stuct wfs_inode) + (512 * 2); 
+	idir->nlinks = 1; 
+	time_t t_result = time(NULL);
+	idir->atim = t_result; 
+	idir->mtim = t_result;
+	idir->ctim = t_result;
+
+	idir_blocks = superblocks[0]->d_blocks_ptr 
+
+
+			
 	return 0;
 }
 
