@@ -34,9 +34,6 @@ static struct wfs_inode **roots;
 static struct wfs_inode *current_inode;
 static int DIRSIZ;
 
-
-
-
 int checkDBitmap(unsigned int inum) {
 
 	int byte_dist = inum/8; // how many byes away from start inum is
@@ -93,6 +90,7 @@ int markbitmap_d(unsigned int bnum, int used) {
 	*blocks_bitmap = *blocks_bitmap | (unsigned char) used<<offset;
 	return 0;
 }
+
 int markbitmap_i(unsigned int inum, int used) {
 
 	int byte_dist = inum/8; // how many byes away from start inum is
@@ -123,6 +121,7 @@ struct wfs_inode* iget(unsigned int inum) {
 	ret_val = (struct wfs_inode*)(mappings[0] + superblocks[0]->i_blocks_ptr + (inum) * BLOCK_SIZE);
 	return ret_val;
 }
+
 int findFreeInode() {
 
     // Iterate over all entries until one that isnt mapped is found
@@ -145,7 +144,7 @@ int findFreeData() {
     return -1; // Return -1 if no open mappings are found
 }
 
-static struct wfs_inode * dirlookup(struct wfs_inode *dp, char *name, uint *entry_offset) {
+static struct wfs_inode* dirlookup(struct wfs_inode *dp, char *name, uint *entry_offset) {
 
 	// FOR RAID 1
 	unsigned char* superblock_offset = mappings[0];
@@ -201,7 +200,7 @@ dirlink(struct wfs_inode *dp, char *name, uint inum)
 	for(int i = 0; i < N_BLOCKS; i++){
 		
 		//alocate the first empty block
-		printf("dp->blocks[i] = %d\n", dp->blocks[i]);
+		printf("dp->blocks[i] = %d\n", (int)dp->blocks[i]);
 		if(dp->blocks[i] == 0){
 			printf("allocatign new block\n");
 			int new_data_num = findFreeData();
@@ -213,8 +212,8 @@ dirlink(struct wfs_inode *dp, char *name, uint inum)
 	
 		printf("block isnt empty\n");
 		de = (struct wfs_dentry *)((unsigned char *) mappings[0] + dp->blocks[i]);
-		printf("de: 0x%x\n",(uint)de);
-		printf("de->name: %s\n", (uint)de->name);
+		printf("de: %p\n",(void*)de);
+		printf("de->name: %s\n", de->name);
 
 		for (off_t block_offset = dp->blocks[i]; block_offset < ip->blocks[i] + BLOCK_SIZE; block_offset += sizeof(struct wfs_dentry)){
 			de = (struct wfs_dentry *)( mappings[0] + block_offset);
@@ -270,12 +269,13 @@ skipelem(char *path, char *name)
 }
 
 
-static struct wfs_inode* namex(char *path, int nameiparent, char *name){
+static struct wfs_inode* namex(const char *path, int nameiparent, char *name){
 	struct wfs_inode *ip, *next;
 
 	if(*path == '/'){
 		ip = iget(0);
-	}else {
+	}
+	else {
 		ip = current_inode;	
 	}
 
@@ -320,9 +320,9 @@ static int wfs_mkdir(const char* path, mode_t mode)
 	printf("parent->num: %d\n", parent->num);
 	// initialize new directory
 	int dnum = findFreeInode();
-	struct wfs_inode * idir = (mappings[0]) +
-								(uintptr_t)superblocks[0]->i_blocks_ptr +
-								(uintptr_t)(512 * dnum);
+	struct wfs_inode * idir = (struct wfs_inode*)((unsigned char*)mappings[0]) +
+								superblocks[0]->i_blocks_ptr +
+								(512 * dnum);
 	
 	idir->num = dnum;
 	idir->mode = S_IFDIR;
@@ -347,6 +347,7 @@ static int wfs_mkdir(const char* path, mode_t mode)
 
 	//update bitmaps
 	markbitmap_i(dnum, 1);
+	return 0;
 }
 
 static int wfs_unlink(const char *path)
@@ -396,23 +397,9 @@ void print_dbitmap(){
 			 printf("%d", !!((*(data_bitmap + i) << j) & 0x80));
 		 }
 		printf(" ");
-
-
-int checkIBitmap(unsigned int inum) {
-	int byte_dist = inum/8; // how many byes away from start inum is
-	unsigned char offset = inum % 8; // We want to start at lower bits
-	unsigned char* inode_bitmap = mappings[0] + superblocks[0]->i_bitmap_ptr;
-	unsigned char bit_val;
-
-	inode_bitmap+= byte_dist; // Go byte_dist bytes over
-	bit_val = *inode_bitmap;
-	bit_val &= (1<<offset); // Shift over offset times and with offset val
-	if(bit_val > 0) {
-		printf("Bit Val is %d\n", bit_val);
-		return 1;
 	}
-	printf("\n");
 }
+
 void print_ibitmap(){
 	int numinodes = superblocks[0]->num_inodes;
 	unsigned char* inode_bitmap = mappings[0] + superblocks[0]->i_bitmap_ptr;
@@ -467,33 +454,16 @@ static int test_mkdir(){
 	struct wfs_inode * dir_inode = iget(p_de->num);
 	printf("dir entry inode should be initialized properly\n");
 	printf("expected: num: 1 mode: %d size: %d\n", S_IFDIR, 512 * 3);
-	printf("  actual: num: %d mode : %d size %d\n", dir_inode->num, dir_inode->mode, dir_inode->size); 
+	printf("  actual: num: %d mode : %d size %d\n", dir_inode->num, dir_inode->mode, (int)dir_inode->size); 
 	//directory mode should be S_IFDIR
 
 	printf("dir entry inode should have an entry to the parent inode\n");
 	printf("expected: num: 0 name: ..\n");
-	struct wfs_dentry * dir_dep = dir_inode->blocks[0];
+	struct wfs_dentry* dir_dep = dir_inode->blocks[0];
 	printf("  actual: num: %d name: %s\n", dir_dep->num, dir_dep->name);	
 
 	//blocks should point to the dataentries
-}
-
-int checkDBitmap(unsigned int dnum) {
-	int byte_dist = dnum/8; // how many byes away from start inum is
-	unsigned char offset = dnum % 8; // We want to start at lower bits
-	unsigned char* data_bitmap = mappings[0] + superblocks[0]->d_bitmap_ptr;
-	unsigned char bit_val;
-
-	data_bitmap+= byte_dist; // Go byte_dist bytes over
-	bit_val = *data_bitmap;
-	bit_val &= (1<<offset); // Shift over offset times and with offset val
-	if(bit_val > 0) {
-		printf("Bit Val is %d\n", bit_val);
-		return 1;
-	}
-	else {
-		return 0;
-	}
+	return 0;
 }
 
 unsigned char* bget(unsigned int bnum) {
@@ -503,46 +473,10 @@ unsigned char* bget(unsigned int bnum) {
 		printf("Data Block is not allocated\n");
 		return NULL;
 	}
-
+	
 	// Go to data offset
 	ret_val = mappings[0] + superblocks[0]->d_blocks_ptr + (bnum * BLOCK_SIZE);
 	return ret_val;
-}
-
-struct wfs_inode* iget(unsigned int inum) {
-	struct wfs_inode* ret_val;
-
-	// Checking if bitmap is allocated
-	if(checkIBitmap(inum) == 0) {
-		printf("INode is not allocated\n");
-		return NULL;
-	}
-
-	// Go to inode offset
-	ret_val = (struct wfs_inode*)(mappings[0] + superblocks[0]->i_blocks_ptr + (inum * BLOCK_SIZE));
-	return ret_val;
-}
-
-int findFreeInode() {
-
-	// Iterate over all entries until one that isnt mapped is found
-	for(int i = 0;i < (int)superblocks[0]->num_inodes;i++) {
-		if(checkIBitmap(i) == 0) {
-			return i;
-		}
-	}
-	return -1; // Return -1 if no open mappings are found
-}
-
-int findFreeData() {
-
-	// Iterate over all entries until one that isnt mapped is found
-	for(int i =0; i < (int)superblocks[0]->num_data_blocks;i++) {
-		if(checkDBitmap(i) == 0) {
-			return i;
-		}
-	}
-	return -1; // Return -1 if no open mappings are found
 }
 
 int mapDisks(int argc, char* argv[]) {
@@ -605,9 +539,7 @@ int mapDisks(int argc, char* argv[]) {
 	return i;
 }
 
-
-int main(int argc, char* argv[])
-{
+int main(int argc, char* argv[]){
 	int new_argc; // Used to pass into fuse_main
 	
 	new_argc = argc - mapDisks(argc, argv); // Gets difference of what was already read vs what isnt
@@ -622,9 +554,9 @@ int main(int argc, char* argv[])
 		new_argv[j] = argv[1 + numdisks + j];
 	}
 	
-  printf("dirlookup() test. \n Expected: 0\n actual: ");
-	uint offset = NULL;
-	struct wfs_inode * firstentry =  dirlookup(roots[0], "hello", &offset);
+  	printf("dirlookup() test. \n Expected: 0\n actual: ");
+	uint offset = 0;
+	struct wfs_inode* firstentry =  dirlookup(roots[0], "hello", &offset);
 
 	char * name = malloc(28 * sizeof(char));	
 	printf("namex() test: \n Expected: inodeNum = 0, Name = hello \n actual: %d %s\n", namex("/hello", 1, name)->num, name); 
