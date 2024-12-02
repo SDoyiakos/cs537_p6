@@ -208,14 +208,17 @@ dirlink(struct wfs_inode *dp, char *name, uint inum)
 			dp->blocks[i] = superblocks[0]->d_blocks_ptr + (BLOCK_SIZE * new_data_num);		
 			markbitmap_d(new_data_num, 1);
 		}
+		printf("dp->blocks[i] = %x\n", (uint)dp->blocks[i]);
 	
 		printf("block isnt empty\n");
-		de = (struct wfs_dentry *)( mappings[0] + (uint)dp->blocks[i]);
-		printf("de->name: %x\n", de->name);
-		for (off_t block_offset = dp->blocks[i]; block_offset < block_offset + BLOCK_SIZE; block_offset += sizeof(struct wfs_dentry)){
+		de = (struct wfs_dentry *)((unsigned char *) mappings[0] + dp->blocks[i]);
+		printf("de: 0x%x\n",(uint)de);
+		printf("de->name: %s\n", (uint)de->name);
+
+		for (off_t block_offset = dp->blocks[i]; block_offset < ip->blocks[i] + BLOCK_SIZE; block_offset += sizeof(struct wfs_dentry)){
 			de = (struct wfs_dentry *)( mappings[0] + block_offset);
 			
-			if(de->name == NULL){
+			if(de->name == '\0'){
 				printf("de->name == NULL\n");
 				strcpy(de->name, name);
 				de->num = inum;
