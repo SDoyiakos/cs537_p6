@@ -144,6 +144,35 @@ int findFreeData() {
     return -1; // Return -1 if no open mappings are found
 }
 
+// Write a new directory entry (name, inum) into the directory dp.
+int
+dirlink(struct wfs_inode *dp, char *name, uint inum)
+{
+  int off;
+  struct wfs_dentry;
+  struct wfs_inode *ip;
+
+  // Check that name is not present.
+  if((ip = dirlookup(dp, name, 0)) != 0){
+    return -1;
+  }
+
+  // Look for an empty dirent.
+  for(off = 0; off < dp->size; off += sizeof(de)){
+    if(readi(dp, (char*)&de, off, sizeof(de)) != sizeof(de))
+      panic("dirlink read");
+    if(de.inum == 0)
+      break;
+  }
+
+  strncpy(de.name, name, DIRSIZ);
+  de.inum = inum;
+  if(writei(dp, (char*)&de, off, sizeof(de)) != sizeof(de))
+    panic("dirlink");
+
+  return 0;
+}
+
 static struct wfs_inode * dirlookup(struct wfs_inode *dp, char *name, uint *entry_offset) {
 
 	// FOR RAID 1
@@ -257,14 +286,11 @@ static int wfs_mknod(const char* path, mode_t mode, dev_t rdev)
 static int wfs_mkdir(const char* path, mode_t mode)
 {
 
-	// get dir of path
 	char * name = malloc(sizeof(char) * FILE_NAME_MAX);
 	struct wfs_inode *parent = namex(path, 1, name);			
+
+	// initialize new directory
 	int dnum = findFreeInode();
-
-
-	// initialize inode
-	
 	struct wfs_inode * idir = (mappings[0]) +
 								(uintptr_t)superblocks[0]->i_blocks_ptr +
 								(uintptr_t)(512 * dnum);
@@ -280,6 +306,9 @@ static int wfs_mkdir(const char* path, mode_t mode)
 	idir->mtim = t_result;
 	idir->ctim = t_result;
 
+
+	// LINK TO PARENT
+
 	// set one datablock to parent inode
 	int parent_dir_b = findFreeData();
 	struct wfs_dentry * dir_entry =(struct wfs_dentry *) (mappings[0] + superblocks[0]->d_blocks_ptr + (512 * parent_dir_b)); 	
@@ -287,12 +316,12 @@ static int wfs_mkdir(const char* path, mode_t mode)
 	memcpy(dir_entry->num, parent_dir_b, sizeof(int));
 	idir->blocks[0] = superblocks[0]->d_blocks_ptr + (512 * parent_dir_b);
 
-	// set one datablock to current inode
-	int current_dir_b = findFreeData();
+	// add direntry to parent
+	int parent_de_child_num = findFreeData();
 	dir_entry =(struct wfs_dentry *) (mappings[0] + superblocks[0]->d_blocks_ptr + (512 * current_dir_b)); 	
 	strcpy(dir_entry->name, name);
 	memcpy(dir_entry->num, current_dir_b, sizeof(int));
-	idir->blocks[1] = superblocks[0]->d_blocks_ptr + (512 * current_dir_b);
+	parent->blocks[0] = superblocks[0]->d_blocks_ptr + (512 * current_dir_b);
 
 	//update bitmaps
 	markbitmap_i(dnum, 1);
@@ -339,6 +368,17 @@ static struct fuse_operations ops = {
   .readdir = wfs_readdir,
 };
 
+void print_dbitmap(){
+	int numdblocks = superblocks[0]->num_data_blocks;
+	unsigned char* data_bitmap = mappings[0] + superblocks[0]->d_bitmap_ptr;
+	for(int i = 0; i < numdblocks/8; i++){
+		 for (int j = 0; j < 8; j++) {
+			 printf("%d", !!((*(data_bitmap + i) << j) & 0x80));
+		 }
+		printf(" ");
+	}
+	printf("\n");
+}
 void print_ibitmap(){
 	int numinodes = superblocks[0]->num_inodes;
 	unsigned char* inode_bitmap = mappings[0] + superblocks[0]->i_bitmap_ptr;
@@ -370,15 +410,36 @@ int test_markbitmapi(){
 	return 0;
 }
 
-int test_mkdir(){
-	
+static int test_mkdir(){
+
+	printf("test_mkdir()\n");
+	wfs_mkdir("/hello", S_IFDIR);	
 	//inode bitmap should be updated
-
+	printf"inode bitmap should be updated\n");
+	printf("expected: 00000011 00000000 00000000 00000000\n  actual: ");
+	print_ibitmap();
+	printf("\n");
 	//data bitmaps should be updated
+	printf("data bitmap should be updated\n");
+	printf("expected: 00000111 00000000 00000000 00000000\n  actual: ");
+	print_dbitmap();
+	printf("\n");
 
+	printf("root inode should have a dir entry for the new directory\n");
+	printf("expected: name: Hello num: 1\n");
+	struct wfs_dentry * p_de = (struct wfs_dentry(mappings[0] + roots[0]->blocks[1]);
+	printf("  actual: name: %s num: %d\n", p_de->name, p_de->num);
+
+	struct wfs_inode * dir_inode = iget(p_de->num);
+	printf("dir entry inode should be initialized properly\n");
+	printf("expected: num: 1 mode: %d size: %d\n", S_IFDIR, 512 * 3);
+	printf("  actual: num: %d mode : %d size %d\n", dir_inode->num, dir_inode->mode, dir_inode->size); 
 	//directory mode should be S_IFDIR
 
-	//dir num should be 1
+	printf("dir entry inode should have an entry to the parent inode\n");
+	printf("expected: num: 0 name: ..\n");
+	struct wfs_dentry * dir_dep = dir_inode->blocks[0];
+	printf("  actual: num: %d name: %s\n", dir_dep->num, dir_dep->name);	
 
 	//blocks should point to the dataentries
 }
