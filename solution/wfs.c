@@ -74,7 +74,7 @@ int checkIBitmap(unsigned int inum) {
 	}
 }
 
-int markbitmap_b(unsigned int bnum, int used) {
+int markbitmap_d(unsigned int bnum, int used) {
 
 	int byte_dist = bnum/8; // how many byes away from start bnum is
 	unsigned char offset = bnum % 8; // We want to start at lower bits
@@ -86,7 +86,7 @@ int markbitmap_b(unsigned int bnum, int used) {
 		unsigned char mask = 1;
 		mask = mask<<offset;
 		mask = ~mask;
-		*inode_bitmap &= mask;
+		*blocks_bitmap &= mask;
 		return 0;
 	}
 	*blocks_bitmap = *blocks_bitmap | (unsigned char) used<<offset;
@@ -160,7 +160,7 @@ static struct wfs_inode * dirlookup(struct wfs_inode *dp, char *name, uint *entr
 
 		//iterte through all dir entries in a blcok
 		struct wfs_dentry * dir_entry;
-		for(uint j = dp->blocks[i]; j < dp->blocks[i] + BLOCK_SIZE; j+= sizeof(wfs_dentry)){
+		for(uint j = dp->blocks[i]; j < dp->blocks[i] + BLOCK_SIZE; j+= sizeof(struct wfs_dentry)){
 			dir_entry = (struct wfs_dentry *)((superblock_offset)
 						 +((unsigned char) j));		
 
@@ -197,11 +197,14 @@ dirlink(struct wfs_inode *dp, char *name, uint inum)
 	// Look for an empty dirent.
 	for(int i = 0; i < N_BLOCKS; i++){
 
+		//alocate the first empty block
 		if(ip->blocks[i] == 0){
-			continue;
+			int new_data_num = findFreeData();
+			markbitmap_d(new_data_num, 1);
+			ip->blocks[i] = superblocks[0]->d_blocks_ptr + (BLOCK_SIZE * new_data_num);		
 		}
 	
-		for (uint block_offset = ip->blocks[i]; block_offset < block_offset + BLOCK_SIZE; block_offset += sizeof(wfs_dentry)){
+		for (uint block_offset = ip->blocks[i]; block_offset < block_offset + BLOCK_SIZE; block_offset += sizeof(struct wfs_dentry)){
 			de = (struct wfs_dentry *)( mappings[0] + block_offset);
 			if(de->name == NULL){
 				strcpy(de->name, name);
@@ -316,26 +319,15 @@ static int wfs_mkdir(const char* path, mode_t mode)
 	idir->ctim = t_result;
 
 
-	// LINK TO PARENT
-
+	// LINK PARENT TO CHILD
+	dirlink(parent, name, idir->num); 
+	
+	// LINK CHILD TO PARENT
+	dirlink(idir, "..", parent->num); 
 	// set one datablock to parent inode
-	int parent_dir_b = findFreeData();
-	struct wfs_dentry * dir_entry =(struct wfs_dentry *) (mappings[0] + superblocks[0]->d_blocks_ptr + (512 * parent_dir_b)); 	
-	strcpy(dir_entry->name, name);
-	memcpy(dir_entry->num, parent_dir_b, sizeof(int));
-	idir->blocks[0] = superblocks[0]->d_blocks_ptr + (512 * parent_dir_b);
-
-	// add direntry to parent
-	int parent_de_child_num = findFreeData();
-	dir_entry =(struct wfs_dentry *) (mappings[0] + superblocks[0]->d_blocks_ptr + (512 * current_dir_b)); 	
-	strcpy(dir_entry->name, name);
-	memcpy(dir_entry->num, current_dir_b, sizeof(int));
-	parent->blocks[0] = superblocks[0]->d_blocks_ptr + (512 * current_dir_b);
 
 	//update bitmaps
 	markbitmap_i(dnum, 1);
-	markbitmap_b(parent_dir_b, 1);
-	markbitmap_b(current_dir_b, 1);
 }
 
 static int wfs_unlink(const char *path)
@@ -424,7 +416,7 @@ static int test_mkdir(){
 	printf("test_mkdir()\n");
 	wfs_mkdir("/hello", S_IFDIR);	
 	//inode bitmap should be updated
-	printf"inode bitmap should be updated\n");
+	printf("inode bitmap should be updated\n");
 	printf("expected: 00000011 00000000 00000000 00000000\n  actual: ");
 	print_ibitmap();
 	printf("\n");
@@ -436,7 +428,7 @@ static int test_mkdir(){
 
 	printf("root inode should have a dir entry for the new directory\n");
 	printf("expected: name: Hello num: 1\n");
-	struct wfs_dentry * p_de = (struct wfs_dentry(mappings[0] + roots[0]->blocks[1]);
+	struct wfs_dentry * p_de = (struct wfs_dentry *)(mappings[0] + roots[0]->blocks[1]);
 	printf("  actual: name: %s num: %d\n", p_de->name, p_de->num);
 
 	struct wfs_inode * dir_inode = iget(p_de->num);
@@ -527,6 +519,7 @@ int main(int argc, char *argv[])
 	
 
 	test_markbitmapi();
+	test_mkdir();
 	return fuse_main(argc, argv, &ops, NULL);	
 
 }
