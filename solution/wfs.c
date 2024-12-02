@@ -25,6 +25,7 @@
 #include "wfs.h"
 #include <stdint.h>
 
+
 static int * disks;
 static unsigned char** mappings;
 static int numdisks = 0;
@@ -395,6 +396,20 @@ void print_dbitmap(){
 			 printf("%d", !!((*(data_bitmap + i) << j) & 0x80));
 		 }
 		printf(" ");
+
+
+int checkIBitmap(unsigned int inum) {
+	int byte_dist = inum/8; // how many byes away from start inum is
+	unsigned char offset = inum % 8; // We want to start at lower bits
+	unsigned char* inode_bitmap = mappings[0] + superblocks[0]->i_bitmap_ptr;
+	unsigned char bit_val;
+
+	inode_bitmap+= byte_dist; // Go byte_dist bytes over
+	bit_val = *inode_bitmap;
+	bit_val &= (1<<offset); // Shift over offset times and with offset val
+	if(bit_val > 0) {
+		printf("Bit Val is %d\n", bit_val);
+		return 1;
 	}
 	printf("\n");
 }
@@ -462,11 +477,79 @@ static int test_mkdir(){
 
 	//blocks should point to the dataentries
 }
-int main(int argc, char *argv[])
-{
 
+int checkDBitmap(unsigned int dnum) {
+	int byte_dist = dnum/8; // how many byes away from start inum is
+	unsigned char offset = dnum % 8; // We want to start at lower bits
+	unsigned char* data_bitmap = mappings[0] + superblocks[0]->d_bitmap_ptr;
+	unsigned char bit_val;
+
+	data_bitmap+= byte_dist; // Go byte_dist bytes over
+	bit_val = *data_bitmap;
+	bit_val &= (1<<offset); // Shift over offset times and with offset val
+	if(bit_val > 0) {
+		printf("Bit Val is %d\n", bit_val);
+		return 1;
+	}
+	else {
+		return 0;
+	}
+}
+
+unsigned char* bget(unsigned int bnum) {
+	unsigned char* ret_val;
+	// Checking if bitmap is allocated
+	if(checkDBitmap(bnum) == 0) {
+		printf("Data Block is not allocated\n");
+		return NULL;
+	}
+
+	// Go to data offset
+	ret_val = mappings[0] + superblocks[0]->d_blocks_ptr + (bnum * BLOCK_SIZE);
+	return ret_val;
+}
+
+struct wfs_inode* iget(unsigned int inum) {
+	struct wfs_inode* ret_val;
+
+	// Checking if bitmap is allocated
+	if(checkIBitmap(inum) == 0) {
+		printf("INode is not allocated\n");
+		return NULL;
+	}
+
+	// Go to inode offset
+	ret_val = (struct wfs_inode*)(mappings[0] + superblocks[0]->i_blocks_ptr + (inum * BLOCK_SIZE));
+	return ret_val;
+}
+
+int findFreeInode() {
+
+	// Iterate over all entries until one that isnt mapped is found
+	for(int i = 0;i < (int)superblocks[0]->num_inodes;i++) {
+		if(checkIBitmap(i) == 0) {
+			return i;
+		}
+	}
+	return -1; // Return -1 if no open mappings are found
+}
+
+int findFreeData() {
+
+	// Iterate over all entries until one that isnt mapped is found
+	for(int i =0; i < (int)superblocks[0]->num_data_blocks;i++) {
+		if(checkDBitmap(i) == 0) {
+			return i;
+		}
+	}
+	return -1; // Return -1 if no open mappings are found
+}
+
+int mapDisks(int argc, char* argv[]) {
 	int i = 1;
-	while(i < argc && argv[i][0] != '-'){ // Read non-flags
+
+	// Reading disk images
+	while(i <= argc && argv[i][0] != '-'){ 
 
 		//read in the disks
 		printf("argv[%d]: %s\n", i, argv[i]);
@@ -481,16 +564,22 @@ int main(int argc, char *argv[])
 		disks[i-1] = fd;
 		i++;
 	}
-	mappings = malloc(sizeof(void*)* numdisks); // Allocate region for beginning ptr in mappings
+	
+	// Allocate region for beginning ptr in mappings
+	mappings = malloc(sizeof(void*)* numdisks); 
 	if(mappings == NULL) {
 		printf("Failed to allocate mapping addrs\n");
 		exit(1);
 	}
+
+	// Allocate region in mem for superblock pointers
 	superblocks = malloc(sizeof(struct wfs_sb*) * numdisks);
 	if(superblocks == NULL) {
 		printf("Failed to allocate superblocks\n");
 		exit(1);
 	}
+
+	// Allocate region in mem for root of each image
 	roots = malloc(sizeof(struct wfs_inode*) * numdisks);
 	if(roots == NULL) {
 		printf("Unable to allocate roots\n");
@@ -499,36 +588,41 @@ int main(int argc, char *argv[])
 
 	// Map every disk into memory
 	struct stat my_stat;
-	for(int i = 0; i < numdisks;i++) {
-		fstat(disks[i], &my_stat);
-		mappings[i] = mmap(NULL, my_stat.st_size, PROT_READ|PROT_WRITE, MAP_PRIVATE,disks[i], 0);
-		if(mappings[i] == MAP_FAILED) {
+	for(int k = 0; k < numdisks;k++) {
+		fstat(disks[k], &my_stat); // Get file information about disk image
+		mappings[k] = mmap(NULL, my_stat.st_size, PROT_READ|PROT_WRITE, MAP_PRIVATE,disks[k], 0); // Map this image into mem
+
+		// Check if mmap worked
+		if(mappings[k] == MAP_FAILED) {
 			printf("Error, couldn't mmap disk into memory\n");
 			exit(1);
 		}
-		superblocks[i] = (struct wfs_sb*)mappings[i];
-		roots[i] = (struct wfs_inode*)((char*)superblocks[i] + superblocks[i]->i_blocks_ptr);
-	}
 
+		// Set superblock and root according to offsets
+		superblocks[k] = (struct wfs_sb*)mappings[k];
+		roots[k] = (struct wfs_inode*)((char*)superblocks[k] + superblocks[k]->i_blocks_ptr);
+	}
+	return i;
+}
+
+
+int main(int argc, char* argv[])
+{
+	int new_argc; // Used to pass into fuse_main
+	
+	new_argc = argc - mapDisks(argc, argv); // Gets difference of what was already read vs what isnt
+	new_argc = argc - new_argc; 
+	char* new_argv[new_argc];
 
 	// initialize currentInode
 	current_inode = roots[0];
 	DIRSIZ = superblocks[0]->num_data_blocks / superblocks[0]->num_inodes;
-	// Print metadata
-	for(int i = 0; i < numdisks; i++){
-		printf("superblock[%d] num_inodes: %ld\n", i, superblocks[i]->num_inodes);
-		printf("roots[%d] inode num: %d\n", i, roots[i]->num);
-		printf("roots[%d] inode mode_t %d\n", i, roots[i]->mode);
-		
-	}	
+
+	for(int j = 0;j < new_argc; j++) {
+		new_argv[j] = argv[1 + numdisks + j];
+	}
 	
-	argv = &argv[i];
-
-	// Print values at root
-	printf("Bit at index 1 is %d\n", checkIBitmap(0));
-	printf("Root nlinks is %d\n", iget(0)->nlinks);
-
-	printf("dirlookup() test. \n Expected: 0\n actual: ");
+  printf("dirlookup() test. \n Expected: 0\n actual: ");
 	uint offset = NULL;
 	struct wfs_inode * firstentry =  dirlookup(roots[0], "hello", &offset);
 
@@ -538,6 +632,5 @@ int main(int argc, char *argv[])
 
 	test_markbitmapi();
 	test_mkdir();
-	return fuse_main(argc, argv, &ops, NULL);	
-
+	return fuse_main(new_argc, new_argv, &ops, NULL);	
 }
