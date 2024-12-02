@@ -82,6 +82,13 @@ int markbitmap_b(unsigned int bnum, int used) {
 	unsigned char bit_val;
 
 	blocks_bitmap+= byte_dist; // Go byte_dist bytes over
+	if(used != 1){
+		unsigned char mask = 1;
+		mask = mask<<offset;
+		mask = ~mask;
+		*inode_bitmap &= mask;
+		return 0;
+	}
 	*blocks_bitmap = *blocks_bitmap | (unsigned char) used<<offset;
 	return 0;
 }
@@ -93,6 +100,13 @@ int markbitmap_i(unsigned int inum, int used) {
 	unsigned char bit_val;
 
 	inode_bitmap+= byte_dist; // Go byte_dist bytes over
+	if(used != 1){
+		unsigned char mask = 1;
+		mask = mask<<offset;
+		mask = ~mask;
+		*inode_bitmap &= mask;
+		return 0;
+	}
 	*inode_bitmap = *inode_bitmap | (unsigned char) used<<offset;
 	return 0;
 }
