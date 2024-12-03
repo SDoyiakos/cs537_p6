@@ -143,10 +143,11 @@ int findFreeData() {
     return -1; // Return -1 if no open mappings are found
 }
 
-static struct wfs_inode * dirlookup(struct wfs_inode *dp, char *name, uint *entry_offset) {
 
+// return 0 if a directory entry already exists, the inode otherwose
+static struct wfs_inode * dirlookup(struct wfs_inode *dp, char *name, uint *entry_offset) {
+	printf("dirlookup()\n");
 	// FOR RAID 1
-	unsigned char* superblock_offset = mappings[0];
 	struct wfs_sb * superblock = superblocks[0];	
 
 	if((dp->mode && S_IFDIR) == 0){
@@ -155,18 +156,25 @@ static struct wfs_inode * dirlookup(struct wfs_inode *dp, char *name, uint *entr
 	}
 
 	for(int i = 0; i < N_BLOCKS; i++){
+
 		if(dp->blocks[i] == 0) continue;
+		printf("block is allocated\n");
 
 		//iterte through all dir entries in a blcok
 		struct wfs_dentry * dir_entry;
 		for(uint j = dp->blocks[i]; j < dp->blocks[i] + BLOCK_SIZE; j+= sizeof(struct wfs_dentry)){
-			dir_entry = (struct wfs_dentry *)((superblock_offset)
-						 +((unsigned char) j));		
 
-			if(dir_entry->name ==NULL) {
+			printf("in block\n");
+			dir_entry = (struct wfs_dentry *) (mappings[0]
+						+ superblocks[0]->d_blocks_ptr
+						 +  j);		
+
+			if(*(dir_entry->name) == 0) {
 				continue;
 			}	
-if(strcmp(dir_entry->name, name) == 0){
+
+			if(strcmp(dir_entry->name, name) == 0){
+
 				if(entry_offset){
 					entry_offset = (void*)dir_entry;	
 				}	
@@ -175,6 +183,8 @@ if(strcmp(dir_entry->name, name) == 0){
 			}	
 		}
 	}
+
+	printf("failed dirlookup()\n");
 	return 0;
 }
 
@@ -263,6 +273,7 @@ skipelem(char *path, char *name)
 
 static struct wfs_inode* namex(char *path, int nameiparent, char *name){
 	struct wfs_inode *ip, *next;
+	printf("namex()\n");
 
 	if(*path == '/'){
 		ip = iget(0);
@@ -279,8 +290,10 @@ static struct wfs_inode* namex(char *path, int nameiparent, char *name){
 		if(nameiparent && (*path == '\0')){
 			return ip;
 		}
-		
+	
+		printf("path: %s name: %s\n", path, name);	
 		if((next = dirlookup(ip, name, 0)) == 0){
+			printf("directory name doesnt exists\n");
 			return 0;
 		}
 		ip = next;
@@ -307,7 +320,7 @@ static int wfs_mkdir(const char* path, mode_t mode)
 	printf("wfs_mkdir()\n");
 	char * name = malloc(sizeof(char) * FILE_NAME_MAX);
 	struct wfs_inode *parent = namex(path, 1, name);			
-
+	printf("parent->num: %d name: %s\n", parent->num, name);
 	// initialize new directory
 	int dnum = findFreeInode();
 	struct wfs_inode * idir = (mappings[0]) +
@@ -455,7 +468,41 @@ int test_markbitmapi(){
 	struct wfs_dentry * dir_dep = mappings[0] + superblocks[0]->d_blocks_ptr + dir_inode->blocks[0];
 	printf("  actual: num: %d name: %s\n", dir_dep->num, dir_dep->name);	
 
-	//blocks should point to the dataentries
+	// ____________________________________________________
+	//SECOND TEST
+	printf("-----TEST 2-----\n");
+	wfs_mkdir("/hello/goodbye", S_IFDIR);
+	printf("inode bitmap should be updated\n");
+	printf("expected: 00000111 00000000 00000000 00000000\n  actual: ");
+	print_ibitmap();
+	printf("\n");
+	//data bitmaps should be updated
+	printf("data bitmap should be updated\n");
+	printf("expected: 0000111 00000000 00000000 00000000\n  actual: ");
+	print_dbitmap();
+	printf("\n");
+
+	printf("parent inode should have a dir entry for the new directory\n");
+	printf("expected: goodbye num: 2\n");
+	p_de = (struct wfs_dentry *)(mappings[0] 
+		+ superblocks[0]->d_blocks_ptr + 
+		dir_inode->blocks[1]);
+
+	printf("  actual: name: %s num: %d\n", (p_de->name), p_de->num);
+
+	struct wfs_inode * child_inode = iget(p_de->num);
+	printf("child inode should be initialized properly\n");
+	printf("expected: num: 1 mode: %d size: %d\n", S_IFDIR, 512 * 3);
+	printf("  actual: num: %d mode : %d size %d\n", child_inode->num,
+			 child_inode->mode, child_inode->size); 
+	
+	//directory mode should be S_IFDIR
+
+	printf("dir entry inode should have an entry to the parent inode\n");
+	printf("expected: num: 0 name: ..\n");
+	dir_dep = mappings[0] + superblocks[0]->d_blocks_ptr + child_inode->blocks[0];
+	printf("  actual: num: %d name: %s\n", dir_dep->num, dir_dep->name);	
+
 }
 
 unsigned char* bget(unsigned int bnum) {
