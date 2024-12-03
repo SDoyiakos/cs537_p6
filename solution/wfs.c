@@ -308,7 +308,6 @@ static int wfs_mkdir(const char* path, mode_t mode)
 	char * name = malloc(sizeof(char) * FILE_NAME_MAX);
 	struct wfs_inode *parent = namex(path, 1, name);			
 
-	printf("parent->num: %d\n", parent->num);
 	// initialize new directory
 	int dnum = findFreeInode();
 	struct wfs_inode * idir = (mappings[0]) +
@@ -326,14 +325,18 @@ static int wfs_mkdir(const char* path, mode_t mode)
 	idir->mtim = t_result;
 	idir->ctim = t_result;
 
-
-	printf("idir->num: %d\n", idir->num);
+	printf("name: %s\n", name);
+	printf("parent->num: %d\n", parent->num);
 	// LINK PARENT TO CHILD
-	dirlink(parent, name, idir->num); 
-	printf("first dirklink passed\n");	
+	if(dirlink(parent, name, idir->num) != 0){
+		printf("could not enter dir_entry\n");
+		return(-1);
+	} 
 	// LINK CHILD TO PARENT
-	dirlink(idir, "..", parent->num); 
-	printf("first dirklink passed\n");	
+	if(dirlink(idir, "..", idir->num) != 0){
+		printf("could not enter dir_entry\n");
+		return(-1);
+	} 
 	// set one datablock to parent inode
 
 	//update bitmaps
@@ -432,14 +435,14 @@ int test_markbitmapi(){
 	printf("\n");
 	//data bitmaps should be updated
 	printf("data bitmap should be updated\n");
-	printf("expected: 00000111 00000000 00000000 00000000\n  actual: ");
+	printf("expected: 0000011 00000000 00000000 00000000\n  actual: ");
 	print_dbitmap();
 	printf("\n");
 
 	printf("root inode should have a dir entry for the new directory\n");
 	printf("expected: name: Hello num: 1\n");
-	struct wfs_dentry * p_de = (struct wfs_dentry *)(mappings[0] + roots[0]->blocks[1]);
-	printf("  actual: name: %s num: %d\n", p_de->name, p_de->num);
+	struct wfs_dentry * p_de = (struct wfs_dentry *)(mappings[0] + superblocks[0]->d_blocks_ptr + roots[0]->blocks[1]);
+	printf("  actual: name: %s num: %d\n", (p_de->name), p_de->num);
 
 	struct wfs_inode * dir_inode = iget(p_de->num);
 	printf("dir entry inode should be initialized properly\n");
@@ -449,7 +452,7 @@ int test_markbitmapi(){
 
 	printf("dir entry inode should have an entry to the parent inode\n");
 	printf("expected: num: 0 name: ..\n");
-	struct wfs_dentry * dir_dep = dir_inode->blocks[0];
+	struct wfs_dentry * dir_dep = mappings[0] + superblocks[0]->d_blocks_ptr + dir_inode->blocks[0];
 	printf("  actual: num: %d name: %s\n", dir_dep->num, dir_dep->name);	
 
 	//blocks should point to the dataentries
