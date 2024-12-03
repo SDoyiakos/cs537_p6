@@ -424,7 +424,7 @@ int test_markbitmapi(){
 	return 0;
 }
  int test_mkdir(){
-	int disk = 1;
+	int disk = 0;
 	printf("test_mkdir()\n");
 	wfs_mkdir("/hello", S_IFDIR);	
 	//inode bitmap should be updated
@@ -477,11 +477,11 @@ int test_markbitmapi(){
 	uint de_offset = 1;
 	struct wfs_inode * newdir = dirlookup(dir_inode, "goodbye", &de_offset, disk);
 	p_de = (struct wfs_dentry *)(mappings[disk] + de_offset);
-	printf("  actual: name: %s num: %d\n", (p_de->name), p_de->num);
+	printf("  actual: %s num: %d\n", (p_de->name), p_de->num);
 	printf("\n");
 	struct wfs_inode * child_inode = iget(p_de->num, disk);
 	printf("child inode should be initialized properly\n");
-	printf("expected: num: 1 mode: %d size: %d\n", S_IFDIR, 512 * 3);
+	printf("expected: num: 2 mode: %d size: %d\n", S_IFDIR, 512 * 3);
 	printf("  actual: num: %d mode : %d size %d\n", child_inode->num,
 			 child_inode->mode, child_inode->size); 
 	
