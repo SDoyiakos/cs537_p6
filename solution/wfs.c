@@ -93,7 +93,7 @@ int markbitmap_d(unsigned int bnum, int used) {
 
 int markbitmap_i(unsigned int inum, int used) {
 
-	int byte_dist = inum/8; // how many byes away from start inum is
+	int byte_dist = inum/8; // how many bytes away from start inum is
 	unsigned char offset = inum % 8; // We want to start at lower bits
 	unsigned char* inode_bitmap = mappings[0] + superblocks[0]->i_bitmap_ptr;
 	unsigned char bit_val;
@@ -144,159 +144,59 @@ int findFreeData() {
     return -1; // Return -1 if no open mappings are found
 }
 
-static struct wfs_inode* dirlookup(struct wfs_inode *dp, char *name, uint *entry_offset) {
+/** allocateBlock
+* Finds an open block and then returns its offset
+**/
+int allocateBlock() {
+	int ret_val;
+	int data_bit;
 
-	// FOR RAID 1
-	unsigned char* superblock_offset = mappings[0];
-	struct wfs_sb * superblock = superblocks[0];	
-
-	if((dp->mode && S_IFDIR) == 0){
-		printf("not a directory\n");
-		exit(1);	
+	// Find open spot
+	data_bit = findFreeData();
+	if(data_bit == -1) {
+		return -1;
 	}
 
-	for(int i = 0; i < N_BLOCKS; i++){
-		if(dp->blocks[i] == 0) continue;
-
-		//iterte through all dir entries in a blcok
-		struct wfs_dentry * dir_entry;
-		for(uint j = dp->blocks[i]; j < dp->blocks[i] + BLOCK_SIZE; j+= sizeof(struct wfs_dentry)){
-			dir_entry = (struct wfs_dentry *)((superblock_offset)
-						 +((unsigned char) j));		
-
-			if(dir_entry->name ==NULL) {
-				continue;
-			}	
-
-			if(strcmp(dir_entry->name, name) == 0){
-				if(entry_offset){
-					entry_offset = (void*)dir_entry;	
-				}	
-	
-				return(iget((uint)dir_entry->num));		
-			}	
-		}
-	}
-	return 0;
+	ret_val = BLOCK_SIZE * data_bit; // Offset is 512 * data_bit
+	markbitmap_d(data_bit, 1); // Mark this as allocated
+	return ret_val;
 }
 
+int findOpenDir(struct wfs_inode* parent, struct wfs_inode* child, char* name) {
+	off_t entry_offset;
+	for(int i =0;i < N_BLOCKS; i++) {
 
-// Write a new directory entry (name, inum) into the directory dp.
-int
-dirlink(struct wfs_inode *dp, char *name, uint inum)
-{
-	printf("dirlink()\n");
-	struct wfs_dentry * de;
-	struct wfs_inode *ip;
-	
-	// Check that name is not present.
-	if((ip = dirlookup(dp, name, 0)) != 0){
-		printf("a file with the same name adly exists");
-	  return -1;
-	}
-	
-	printf("passes dirlookup\n");	
-	// Look for an empty dirent.
-	for(int i = 0; i < N_BLOCKS; i++){
-		
-		//alocate the first empty block
-		printf("dp->blocks[i] = %d\n", (int)dp->blocks[i]);
-		if(dp->blocks[i] == 0){
-			printf("allocatign new block\n");
-			int new_data_num = findFreeData();
-			printf("new_data_num: %d\n", new_data_num);
-			dp->blocks[i] = superblocks[0]->d_blocks_ptr + (BLOCK_SIZE * new_data_num);		
-			markbitmap_d(new_data_num, 1);
+		// If block not allocated
+		if(parent->blocks[i] == 0) {
+			int block_offset;
+			block_offset = allocateBlock();
+
+			// If unable to allocate
+			if(block_offset == -1) {
+				return -1;
+			}
+			// If able to allocate then set its offset
+			else {
+				parent->blocks[i] = block_offset;
+				entry_offset = parent->blocks[i];
+				return entry_offset;
+			}
 		}
-		printf("dp->blocks[i] = %x\n", (uint)dp->blocks[i]);
-	
-		printf("block isnt empty\n");
-		de = (struct wfs_dentry *)((unsigned char *) mappings[0] + dp->blocks[i]);
-		printf("de: %p\n",(void*)de);
-		printf("de->name: %s\n", de->name);
+		// Found an allocated block
+		else {
 
-		for (off_t block_offset = dp->blocks[i]; block_offset < ip->blocks[i] + BLOCK_SIZE; block_offset += sizeof(struct wfs_dentry)){
-			de = (struct wfs_dentry *)( mappings[0] + block_offset);
-			
-			if(de->name == '\0'){
-				printf("de->name == NULL\n");
-				strcpy(de->name, name);
-				de->num = inum;
-				return 0;
-			}	
-
-		} 
-
-	} 
-	
-	printf("file is full\n");
-	return -1;
-}
- // Copy the next path element from path into name.
-// Return a pointer to the element following the copied one.
-// The returned path has no leading slashes,
-// so the caller can check *path=='\0' to see if the name is the last one.
-// If no name to remove, return 0.
-//
-// Examples:
-//   skipelem("a/bb/c", name) = "bb/c", setting name = "a"
-//   skipelem("///a//bb", name) = "bb", setting name = "a"
-//   skipelem("a", name) = "", setting name = "a"
-//   skipelem("", name) = skipelem("////", name) = 0
-//
-static char*
-skipelem(char *path, char *name)
-{ 
-  char *s;
-  int len;
-  while(*path == '/')
-    path++;
-  if(*path == 0)
-    return 0;
-  s = path;
-  while(*path != '/' && *path != 0)
-    path++;
-  len = path - s;
-  if(len >= DIRSIZ)
-    memmove(name, s, DIRSIZ);
-  else {
-    memmove(name, s, len);
-    name[len] = 0;
-  }
-  while(*path == '/')
-    path++;
-  return path;
+			// Iterate over all entries for a free one in the parent->block[i]
+			struct wfs_dentry* curr_entry;
+			for(int j =0; j < BLOCK_SIZE; j+=sizeof(struct wfs_dentry)) {
+				curr_entry = (struct wfs_dentry*)(parent->blocks[i] + j); 
+				if(curr_entry->num == 0) { // If current entry is not used
+					return 
+				}
+			}
+		}
+	}
 }
 
-
-static struct wfs_inode* namex(const char *path, int nameiparent, char *name){
-	struct wfs_inode *ip, *next;
-
-	if(*path == '/'){
-		ip = iget(0);
-	}
-	else {
-		ip = current_inode;	
-	}
-
-	while((path = skipelem(path, name)) != 0){
-		if((ip->mode && S_IFDIR) == 0){
-			printf("namex failed. file is not a dir\n");
-			exit(1);
-		}
-
-		if(nameiparent && (*path == '\0')){
-			return ip;
-		}
-		
-		if((next = dirlookup(ip, name, 0)) == 0){
-			return 0;
-		}
-		ip = next;
-	}
-
-	return ip;
-}
 
 static int wfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 			   off_t offset, struct fuse_file_info *fi)
@@ -312,41 +212,10 @@ static int wfs_mknod(const char* path, mode_t mode, dev_t rdev)
 
 static int wfs_mkdir(const char* path, mode_t mode)
 {
-
-	printf("wfs_mkdir()\n");
-	char * name = malloc(sizeof(char) * FILE_NAME_MAX);
-	struct wfs_inode *parent = namex(path, 1, name);			
-
-	printf("parent->num: %d\n", parent->num);
-	// initialize new directory
-	int dnum = findFreeInode();
-	struct wfs_inode * idir = (struct wfs_inode*)((unsigned char*)mappings[0]) +
-								superblocks[0]->i_blocks_ptr +
-								(512 * dnum);
+	if(path[0] == '/') {
+		if(roots[0].blocks != 0) 
+	}
 	
-	idir->num = dnum;
-	idir->mode = S_IFDIR;
-	idir->uid = getuid(); 
-	idir->gid = getgid(); 
-	idir->size = sizeof(struct wfs_inode) + (512 * 2); 
-	idir->nlinks = 1; 
-	time_t t_result = time(NULL);
-	idir->atim = t_result; 
-	idir->mtim = t_result;
-	idir->ctim = t_result;
-
-
-	printf("idir->num: %d\n", idir->num);
-	// LINK PARENT TO CHILD
-	dirlink(parent, name, idir->num); 
-	printf("first dirklink passed\n");	
-	// LINK CHILD TO PARENT
-	dirlink(idir, "..", parent->num); 
-	printf("first dirklink passed\n");	
-	// set one datablock to parent inode
-
-	//update bitmaps
-	markbitmap_i(dnum, 1);
 	return 0;
 }
 
