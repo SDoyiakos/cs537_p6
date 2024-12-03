@@ -477,18 +477,20 @@ int test_markbitmapi(){
 	struct wfs_inode * newdir = dirlookup(dir_inode, "goodbye", &de_offset);
 	p_de = (struct wfs_dentry *)(mappings[0] + de_offset);
 	printf("  actual: name: %s num: %d\n", (p_de->name), p_de->num);
-
+	printf("\n");
 	struct wfs_inode * child_inode = iget(p_de->num);
 	printf("child inode should be initialized properly\n");
 	printf("expected: num: 1 mode: %d size: %d\n", S_IFDIR, 512 * 3);
 	printf("  actual: num: %d mode : %d size %d\n", child_inode->num,
 			 child_inode->mode, child_inode->size); 
 	
+	printf("\n");
 	//directory mode should be S_IFDIR
 
 	printf("dir entry inode should have an entry to the parent inode\n");
-	printf("expected: num: 0 name: ..\n");
-	dir_dep = mappings[0] + superblocks[0]->d_blocks_ptr + child_inode->blocks[0];
+	printf("expected: num: 1 name: ..\n");
+	struct wfs_inode * parent = dirlookup(newdir, "..", &de_offset);
+	dir_dep = mappings[0] +	de_offset; 
 	printf("  actual: num: %d name: %s\n", dir_dep->num, dir_dep->name);	
 
 }
