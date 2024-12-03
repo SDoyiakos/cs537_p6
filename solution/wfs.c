@@ -166,8 +166,7 @@ static struct wfs_inode * dirlookup(struct wfs_inode *dp, char *name, uint *entr
 			if(dir_entry->name ==NULL) {
 				continue;
 			}	
-
-			if(strcmp(dir_entry->name, name) == 0){
+if(strcmp(dir_entry->name, name) == 0){
 				if(entry_offset){
 					entry_offset = (void*)dir_entry;	
 				}	
@@ -194,30 +193,25 @@ dirlink(struct wfs_inode *dp, char *name, uint inum)
 	  return -1;
 	}
 	
-	printf("passes dirlookup\n");	
 	// Look for an empty dirent.
 	for(int i = 0; i < N_BLOCKS; i++){
 		
 		//alocate the first empty block
-		printf("dp->blocks[i] = %d\n", dp->blocks[i]);
 		if(dp->blocks[i] == 0){
-			printf("allocatign new block\n");
 			int new_data_num = findFreeData();
-			printf("new_data_num: %d\n", new_data_num);
 			dp->blocks[i] =  BLOCK_SIZE * new_data_num;		
 			markbitmap_d(new_data_num, 1);
 		}
 	
-		printf("block isnt empty\n");
-		de = (struct wfs_dentry *)((unsigned char *) mappings[0] + dp->blocks[i]);
-		printf("de: 0x%x\n",(uint)de);
-		printf("de->name: %s\n", (uint)de->name);
+		de = (struct wfs_dentry *)((unsigned char *) mappings[0] + superblocks[0]->d_blocks_ptr + dp->blocks[i]);
 
-		for (off_t block_offset = dp->blocks[i]; block_offset < ip->blocks[i] + BLOCK_SIZE; block_offset += sizeof(struct wfs_dentry)){
-			de = (struct wfs_dentry *)( mappings[0] + block_offset);
-			
-			if(de->name == '\0'){
-				printf("de->name == NULL\n");
+		for (off_t block_offset = dp->blocks[i];
+			 block_offset < dp->blocks[i] + BLOCK_SIZE; 
+			block_offset += sizeof(struct wfs_dentry)){
+
+			de = (struct wfs_dentry *)( mappings[0] +  superblocks[0]->d_blocks_ptr + block_offset);
+				
+			if((*(de->name) == 0)){
 				strcpy(de->name, name);
 				de->num = inum;
 				return 0;

@@ -7,8 +7,26 @@ FUSE_CFLAGS = `pkg-config fuse --cflags --libs`
 .PHONY: all
 all: $(BINS)
 
+run_wfs: 
+	./wfs disk.img disk1.img
+redo_disks: mkfs
+	$(MAKE) remove_disks
+	$(MAKE) make_disk
+	$(MAKE) duplicate_disk
+	$(MAKE) make_disk
+	./mkfs -r 1 -d disk.img -d disk1.img -i 32 -b 200	
+
+duplicate_disk: disk.img
+	mv disk.img disk1.img
+make_disk:
+	./create_disk.sh
+remove_disks:
+	rm -rf *.img
+
 wfs: wfs.c
 	$(CC) $(CFLAGS) wfs.c $(FUSE_CFLAGS) -o wfs
+
+	
 mkfs: mkfs.c
 	$(CC) $(CFLAGS) -o mkfs mkfs.c
 mkfs_sanitize:
