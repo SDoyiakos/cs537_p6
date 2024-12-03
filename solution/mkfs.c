@@ -49,12 +49,16 @@ int init_disks(int * disks, int num_disks, int num_inodes, int num_datablocks, i
 		
         //INIT THE ROOT DIR.
 		struct wfs_inode * root_inode = malloc(sizeof(struct wfs_inode));
-		root_inode->num = 1;
+		root_inode->num = 0;
 		root_inode->mode = S_IRWXU | S_IFDIR;
 		root_inode->uid = getuid();
 		root_inode->gid = getgid();
 		root_inode->size = 0;
 		root_inode->nlinks = 1;
+		for(int i =0;i < N_BLOCKS;i++) {
+			root_inode->blocks[i] = -1;
+		}
+
 		
 		t_result = time(NULL);
 		root_inode->atim = t_result; 

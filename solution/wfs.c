@@ -32,7 +32,6 @@ static int numdisks = 0;
 static struct wfs_sb ** superblocks;
 static struct wfs_inode **roots;
 static struct wfs_inode *current_inode;
-static int DIRSIZ;
 
 int checkDBitmap(unsigned int inum) {
 
@@ -159,15 +158,36 @@ int allocateBlock() {
 
 	ret_val = BLOCK_SIZE * data_bit; // Offset is 512 * data_bit
 	markbitmap_d(data_bit, 1); // Mark this as allocated
+	return ret_val; // Returns first entry within block
+}
+
+/** allocateInode
+* Finds an open inode and then returns its offset from inode ptr
+**/
+int allocateInode() {
+	int ret_val;
+	int data_bit;
+
+	data_bit = findFreeInode();
+	if(data_bit == -1) {
+		return -1;
+	}
+
+	ret_val = BLOCK_SIZE * data_bit;
+	markbitmap_i(data_bit, 1);
 	return ret_val;
 }
 
-int findOpenDir(struct wfs_inode* parent, struct wfs_inode* child, char* name) {
+struct wfs_dentry* getDirent(off_t dir_offset) {
+	return  (struct wfs_dentry*)(mappings[0] + superblocks[0]->d_blocks_ptr + dir_offset);
+}
+
+off_t findOpenDir(struct wfs_inode* parent) {
 	off_t entry_offset;
 	for(int i =0;i < N_BLOCKS; i++) {
 
 		// If block not allocated
-		if(parent->blocks[i] == 0) {
+		if(parent->blocks[i] == -1) {
 			int block_offset;
 			block_offset = allocateBlock();
 
@@ -179,22 +199,24 @@ int findOpenDir(struct wfs_inode* parent, struct wfs_inode* child, char* name) {
 			else {
 				parent->blocks[i] = block_offset;
 				entry_offset = parent->blocks[i];
+				parent->size+=BLOCK_SIZE;
 				return entry_offset;
 			}
 		}
 		// Found an allocated block
 		else {
-
 			// Iterate over all entries for a free one in the parent->block[i]
 			struct wfs_dentry* curr_entry;
-			for(int j =0; j < BLOCK_SIZE; j+=sizeof(struct wfs_dentry)) {
-				curr_entry = (struct wfs_dentry*)(parent->blocks[i] + j); 
+			for(int j = 0; j < BLOCK_SIZE; j+=sizeof(struct wfs_dentry)) {
+				
+				curr_entry = getDirent(parent->blocks[i] + j); 
 				if(curr_entry->num == 0) { // If current entry is not used
-					return 
+					return i+j; // Return offset of entry i(offset of block) + j(offset within block)
 				}
 			}
 		}
 	}
+	return -1; // Return this when no open space is found
 }
 
 
@@ -212,9 +234,31 @@ static int wfs_mknod(const char* path, mode_t mode, dev_t rdev)
 
 static int wfs_mkdir(const char* path, mode_t mode)
 {
-	if(path[0] == '/') {
-		if(roots[0].blocks != 0) 
-	}
+	off_t newdir_offset; // Offset of dirent in new dir
+	struct wfs_dentry* new_entry; // New Dirent entry
+	off_t newinode_offset; // Offset of new inode for new dir
+	off_t newinode_parent;
+	struct wfs_inode* new_inode; // New inode allocated for new dir
+
+	// Create child inode
+	newinode_offset = allocateInode();
+	new_inode = (struct wfs_inode*)(superblocks[0]->i_blocks_ptr + newinode_offset);
+	new_inode->num = (newinode_offset / BLOCK_SIZE);
+	new_inode->mode = S_IFDIR | mode;
+	new_inode->uid = getuid();
+	new_inode->gid = getgid();
+	new_inode->size = 0;
+	new_inode->nlinks = 1;
+	new_inode->atim = time(0);
+	new_inode->mtim = time(0);
+	new_inode->ctim = time(0);
+	//parent = findOpenDir(new_inode);
+
+	// Create entry in parent dir
+	newdir_offset = findOpenDir(roots[0]); // Get an open entry in root
+	new_entry = (struct wfs_dentry*)(superblocks[0]->d_blocks_ptr + newdir_offset);
+	strncpy(new_entry->name, path,MAX_NAME); // Copy name into dentry
+	
 	
 	return 0;
 }
@@ -281,61 +325,8 @@ void print_ibitmap(){
 	printf("\n");
 }
 
-int test_markbitmapi(){
-	printf("test_markbitmap()\n");
-	printf("expected: 00000001 00000000 00000000 00000000\n  actual: ");
-	print_ibitmap();
-	printf("\n");
-
-	markbitmap_i(1, 1);
-	markbitmap_i(31, 1);
-	printf("expected: 00000011 00000000 00000000 10000000\n  actual: ");
-	print_ibitmap();	
-	printf("\n");
-
-	markbitmap_i(1, 0);
-	markbitmap_i(31, 0);
-	printf("expected: 00000001 00000000 00000000 00000000\n  actual: ");
-	print_ibitmap();	
-	return 0;
-}
-
-static int test_mkdir(){
-
-	printf("test_mkdir()\n");
-	wfs_mkdir("/hello", S_IFDIR);	
-	//inode bitmap should be updated
-	printf("inode bitmap should be updated\n");
-	printf("expected: 00000011 00000000 00000000 00000000\n  actual: ");
-	print_ibitmap();
-	printf("\n");
-	//data bitmaps should be updated
-	printf("data bitmap should be updated\n");
-	printf("expected: 00000111 00000000 00000000 00000000\n  actual: ");
-	print_dbitmap();
-	printf("\n");
-
-	printf("root inode should have a dir entry for the new directory\n");
-	printf("expected: name: Hello num: 1\n");
-	struct wfs_dentry * p_de = (struct wfs_dentry *)(mappings[0] + roots[0]->blocks[1]);
-	printf("  actual: name: %s num: %d\n", p_de->name, p_de->num);
-
-	struct wfs_inode * dir_inode = iget(p_de->num);
-	printf("dir entry inode should be initialized properly\n");
-	printf("expected: num: 1 mode: %d size: %d\n", S_IFDIR, 512 * 3);
-	printf("  actual: num: %d mode : %d size %d\n", dir_inode->num, dir_inode->mode, (int)dir_inode->size); 
-	//directory mode should be S_IFDIR
-
-	printf("dir entry inode should have an entry to the parent inode\n");
-	printf("expected: num: 0 name: ..\n");
-	struct wfs_dentry* dir_dep = dir_inode->blocks[0];
-	printf("  actual: num: %d name: %s\n", dir_dep->num, dir_dep->name);	
-
-	//blocks should point to the dataentries
-	return 0;
-}
-
 unsigned char* bget(unsigned int bnum) {
+
 	unsigned char* ret_val;
 	// Checking if bitmap is allocated
 	if(checkDBitmap(bnum) == 0) {
@@ -415,23 +406,10 @@ int main(int argc, char* argv[]){
 	new_argc = argc - new_argc; 
 	char* new_argv[new_argc];
 
-	// initialize currentInode
-	current_inode = roots[0];
-	DIRSIZ = superblocks[0]->num_data_blocks / superblocks[0]->num_inodes;
-
 	for(int j = 0;j < new_argc; j++) {
 		new_argv[j] = argv[1 + numdisks + j];
 	}
-	
-  	printf("dirlookup() test. \n Expected: 0\n actual: ");
-	uint offset = 0;
-	struct wfs_inode* firstentry =  dirlookup(roots[0], "hello", &offset);
 
-	char * name = malloc(28 * sizeof(char));	
-	printf("namex() test: \n Expected: inodeNum = 0, Name = hello \n actual: %d %s\n", namex("/hello", 1, name)->num, name); 
 	
-
-	test_markbitmapi();
-	test_mkdir();
-	return fuse_main(new_argc, new_argv, &ops, NULL);	
+	//return fuse_main(new_argc, new_argv, &ops, NULL);	
 }
