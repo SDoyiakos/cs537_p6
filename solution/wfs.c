@@ -169,7 +169,7 @@ static struct wfs_inode * dirlookup(struct wfs_inode *dp, char *name, uint *entr
 			if(strcmp(dir_entry->name, name) == 0){
 
 				if(entry_offset){
-					entry_offset = (void*)dir_entry;	
+					*entry_offset = j;	
 				}	
 	
 				return(iget((uint)dir_entry->num));		
@@ -264,7 +264,6 @@ skipelem(char *path, char *name)
 
 static struct wfs_inode* namex(char *path, int nameiparent, char *name){
 	struct wfs_inode *ip, *next;
-	printf("namex()\n");
 
 	if(*path == '/'){
 		ip = iget(0);
@@ -282,7 +281,6 @@ static struct wfs_inode* namex(char *path, int nameiparent, char *name){
 			return ip;
 		}
 	
-		printf("path: %s name: %s\n", path, name);	
 		if((next = dirlookup(ip, name, 0)) == 0){
 			printf("directory name doesnt exists\n");
 			return 0;
@@ -475,10 +473,9 @@ int test_markbitmapi(){
 
 	printf("parent inode should have a dir entry for the new directory\n");
 	printf("expected: goodbye num: 2\n");
-	uint de_offset;
+	uint de_offset = 1;
 	struct wfs_inode * newdir = dirlookup(dir_inode, "goodbye", &de_offset);
 	p_de = (struct wfs_dentry *)(mappings[0] + de_offset);
-	printf("newdir->num: %d de_offset: %ld\n", newdir->num, de_offset);
 	printf("  actual: name: %s num: %d\n", (p_de->name), p_de->num);
 
 	struct wfs_inode * child_inode = iget(p_de->num);
