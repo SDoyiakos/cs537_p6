@@ -34,10 +34,7 @@ static struct wfs_inode *current_inode;
 static int DIRSIZ;
 static int raid_mode = 1;
 
-
-
 int checkDBitmap(unsigned int inum, int disk) {
-
 	int byte_dist = inum/8; // how many byes away from start inum is
 	unsigned char offset = inum % 8; // We want to start at lower bits
 	unsigned char* data_bitmap = mappings[disk] + superblocks[disk]->d_bitmap_ptr;
@@ -90,7 +87,9 @@ int markbitmap_d(unsigned int bnum, int used, int disk) {
 	return 0;
 }
 
+
 int markbitmap_i(unsigned int inum, int used, int disk) {
+
 
 	int byte_dist = inum/8; // how many byes away from start inum is
 	unsigned char offset = inum % 8; // We want to start at lower bits
@@ -120,7 +119,9 @@ struct wfs_inode* iget(unsigned int inum, int disk) {
 	return ret_val;
 }
 
+
 int findFreeInode(int disk) {
+
 
     // Iterate over all entries until one that isnt mapped is found
     for(int i = 0;i < (int)superblocks[disk]->num_inodes;i++) {
@@ -194,25 +195,23 @@ dirlink(struct wfs_inode *dp, char *name, uint inum, int disk)
 	for(int i = 0; i < N_BLOCKS; i++){
 		
 		//alocate the first empty block
-	
-		// HOW TO CHECK IF A BLOCK IS UNITIALIZED	
+
 		if(dp->blocks[i] == 0){
 			int new_data_num = findFreeData(disk);
 			dp->blocks[i] = superblocks[disk]->d_blocks_ptr + (BLOCK_SIZE * new_data_num);		
 			markbitmap_d(new_data_num, 1, disk);
 		}
 	
-
 		for (off_t block_offset = dp->blocks[i];
 			 block_offset < dp->blocks[i] + BLOCK_SIZE; 
-			block_offset += sizeof(struct wfs_dentry)){
+			 block_offset += sizeof(struct wfs_dentry)){
 
-			de = (struct wfs_dentry *)( mappings[disk] + block_offset);
+			 de = (struct wfs_dentry *)( mappings[disk] + block_offset);
 				
-			if((*(de->name) == 0)){
-				strcpy(de->name, name);
-				de->num = inum;
-				return 0;
+			 if((*(de->name) == 0)){
+				  strcpy(de->name, name);
+				  de->num = inum;
+				  return 0;
 			}	
 
 		} 
@@ -265,6 +264,7 @@ static struct wfs_inode* namex(char *path, int nameiparent, char *name, int disk
 	if(*path == '/'){
 		ip = iget(0, disk);
 	}else {
+
 		ip = current_inode;	
 	}
 
@@ -302,8 +302,6 @@ static int wfs_mknod(const char* path, mode_t mode, dev_t rdev)
 
 static int wfs_mkdir(const char* path, mode_t mode)
 {
-
-	printf("NUMDISKS: %d\n", numdisks);
 	// initialize new directory
 	//FOR RAID 1
 	if(raid_mode == 1){
@@ -342,6 +340,7 @@ static int wfs_mkdir(const char* path, mode_t mode)
 			free(pathcpy);
 			}
 	}
+
 	return 0;
 }
 
@@ -400,6 +399,7 @@ void print_ibitmap(int disk){
 	int numinodes = superblocks[disk]->num_inodes;
 	unsigned char* inode_bitmap = mappings[disk] + superblocks[disk]->d_bitmap_ptr;
 		for(int i = 0; i < numinodes/8; i++){
+
 		 for (int j = 0; j < 8; j++) {
 			printf("%d", !!((*(inode_bitmap + i) << j) & 0x80));
 		 }
@@ -429,6 +429,7 @@ int test_markbitmapi(){
 	int disk = 0;
 	printf("test_mkdir()\n");
 	wfs_mkdir("/hello", S_IFDIR);	
+
 	for(disk = 0; disk < numdisks; disk++){
 		//inode bitmap should be updated
 		printf("-------DISK %d _____", disk);
@@ -500,6 +501,7 @@ int test_markbitmapi(){
 		struct wfs_dentry * dir_dep = (struct wfs_dentry *)(mappings[disk] +	de_offset); 
 		printf("  actual: num: %d name: %s\n", dir_dep->num, dir_dep->name);	
 	}
+
 	return 0;
 }
 
@@ -511,7 +513,7 @@ unsigned char* bget(unsigned int bnum,int disk) {
 		printf("Data Block is not allocated\n");
 		return NULL;
 	}
-
+	
 	// Go to data offset
 	ret_val = mappings[disk] + superblocks[disk]->d_blocks_ptr + (bnum * BLOCK_SIZE);
 	return ret_val;
@@ -585,8 +587,9 @@ int mapDisks(int argc, char* argv[]) {
 int main(int argc, char* argv[])
 {
 	//FOR VALGRIND
-	argc = argc-1;
-	argv = &argv[1];
+	//argc = argc-1;
+	//argv = &argv[1];
+
 	int new_argc; // Used to pass into fuse_main
 
 	// TODO: INITIALIZE Raid_mode
@@ -602,6 +605,14 @@ int main(int argc, char* argv[])
 	for(int j = 0;j < new_argc; j++) {
 		new_argv[j] = argv[1 + numdisks + j];
 	}
+
+  //printf("dirlookup() test. \n Expected: 0\n actual: ");
+	//uint offset = 0;
+	//struct wfs_inode* firstentry =  dirlookup(roots[0], "hello", &offset);
+
+	//char * name = malloc(28 * sizeof(char));	
+	//printf("namex() test: \n Expected: inodeNum = 0, Name = hello \n actual: %d %s\n", namex("/hello", 1, name)->num, name); 
+	
 
 	//test_markbitmapi();
 	test_mkdir();
