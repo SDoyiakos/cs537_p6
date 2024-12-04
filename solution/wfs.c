@@ -185,7 +185,6 @@ dirlink(struct wfs_inode *dp, char *name, uint inum, int disk)
 {
 	struct wfs_dentry * de;
 	struct wfs_inode *ip;
-	
 	// Check that name is not present.
 	if((ip = dirlookup(dp, name, 0, disk)) != 0){
 		printf("a file with the same name adly exists");
@@ -305,12 +304,14 @@ static int wfs_mknod(const char* path, mode_t mode, dev_t rdev)
 static int wfs_mkdir(const char* path, mode_t mode)
 {
 
+	printf("NUMDISKS: %d\n", numdisks);
 	// initialize new directory
 	//FOR RAID 1
 	if(raid_mode == 1){
 		for(int disk = 0; disk < numdisks; disk++) {
+			char *pathcpy = strdup(path);
 			char * name = malloc(sizeof(char) * FILE_NAME_MAX);
-			struct wfs_inode *parent = namex(path, 1, name, disk);	
+			struct wfs_inode *parent = namex(pathcpy, 1, name, disk);	
 			int dnum = findFreeInode(disk);
 			struct wfs_inode * idir = (mappings[disk]) + superblocks[disk]->i_blocks_ptr + (512 * dnum);
 			
@@ -338,7 +339,8 @@ static int wfs_mkdir(const char* path, mode_t mode)
 		
 			//update bitmaps
 			markbitmap_i(dnum, 1, disk);
-
+			free(name);
+			free(pathcpy);
 			}
 	}
 }
@@ -394,32 +396,23 @@ void print_dbitmap(disk){
 
 }
 
-char * print_ibitmap(int disk){
+void print_ibitmap(int disk){
 	int numinodes = superblocks[disk]->num_inodes;
-	unsigned char* inode_bitmap = mappings[disk] + superblocks[disk]->i_bitmap_ptr;
-	char * ibitmapstr = NULL;
-	int ibitmapstr_size = 0;
-	for(int i = 0; i < numinodes/8; i++){
+	unsigned char* inode_bitmap = mappings[disk] + superblocks[disk]->d_bitmap_ptr;
+		for(int i = 0; i < numinodes/8; i++){
 		 for (int j = 0; j < 8; j++) {
-			ibitmapstr_size++;
-			realloc(ibitmapstr, ibitmapstr_size * sizeof(char));
-			printf("realloc passes\n");
-			ibitmapstr[ibitmapstr_size -1] = atoi(!!((*(inode_bitmap + i) << j) & 0x80));
 			printf("%d", !!((*(inode_bitmap + i) << j) & 0x80));
 		 }
 		printf(" ");
 	}
 	printf("\n");
-	printf("BBB: %s\n", ibitmapstr);
-	return ibitmapstr;
 }
 
 int test_markbitmapi(){
 	int disk = 1;
 	printf("test_markbitmap()\n");
 	printf("expected: 00000001 00000000 00000000 00000000\n  actual: ");
-	char* actual = print_ibitmap(disk);
-	printf("AAAA: %s\n", actual);
+	print_ibitmap(disk);
 	markbitmap_i(1, 1, disk);
 	markbitmap_i(31, 1, disk);
 	printf("expected: 00000011 00000000 00000000 10000000\n  actual: ");
@@ -436,73 +429,77 @@ int test_markbitmapi(){
 	int disk = 0;
 	printf("test_mkdir()\n");
 	wfs_mkdir("/hello", S_IFDIR);	
-	//inode bitmap should be updated
-	printf("inode bitmap should be updated\n");
-	printf("expected: 00000011 00000000 00000000 00000000\n  actual: ");
-	print_ibitmap(disk);
-	printf("\n");
-	//data bitmaps should be updated
-	printf("data bitmap should be updated\n");
-	printf("expected: 0000011 00000000 00000000 00000000\n  actual: ");
-	print_dbitmap(disk);
-	printf("\n");
-
-	printf("root inode should have a dir entry for the new directory\n");
-	printf("expected: name: Hello num: 1\n");
-	struct wfs_dentry * p_de = (struct wfs_dentry *)(mappings[disk] + roots[disk]->blocks[disk]);
-	printf("  actual: name: %s num: %d\n", (p_de->name), p_de->num);
-	printf("\n");
-
-	struct wfs_inode * dir_inode = iget(p_de->num, disk);
-	printf("dir entry inode should be initialized properly\n");
-	printf("expected: num: 1 mode: %d size: %d\n", S_IFDIR, 512 * 3);
-	printf("  actual: num: %d mode : %d size %d\n", dir_inode->num, dir_inode->mode, dir_inode->size); 
-	printf("\n");
-	//directory mode should be S_IFDIR
-
-	printf("dir entry inode should have an entry to the parent inode\n");
-	printf("expected: num: 0 name: ..\n");
-	struct wfs_dentry * dir_dep = mappings[disk]  + dir_inode->blocks[disk];
-	printf("  actual: num: %d name: %s\n", dir_dep->num, dir_dep->name);	
-	printf("\n");
-
+	for(disk = 0; disk < numdisks; disk++){
+		//inode bitmap should be updated
+		printf("-------DISK %d _____", disk);
+		printf("inode bitmap should be updated\n");
+		printf("expected: 00000011 00000000 00000000 00000000\n  actual: ");
+		print_ibitmap(disk);
+		printf("\n");
+		//data bitmaps should be updated
+		printf("data bitmap should be updated\n");
+		printf("expected: 0000011 00000000 00000000 00000000\n  actual: ");
+		print_dbitmap(disk);
+		printf("\n");
+	
+		printf("root inode should have a dir entry for the new directory\n");
+		printf("expected: name: Hello num: 1\n");
+		struct wfs_dentry * p_de = (struct wfs_dentry *)(mappings[disk] + roots[disk]->blocks[0]);
+		printf("  actual: name: %s num: %d\n", (p_de->name), p_de->num);
+		printf("\n");
+	
+		struct wfs_inode * dir_inode = iget(p_de->num, disk);
+		printf("dir entry inode should be initialized properly\n");
+		printf("expected: num: 1 mode: %d size: %d\n", S_IFDIR, 512 * 3);
+		printf("  actual: num: %d mode : %d size %d\n", dir_inode->num, dir_inode->mode, dir_inode->size); 
+		printf("\n");
+		//directory mode should be S_IFDIR
+	
+		printf("dir entry inode should have an entry to the parent inode\n");
+		printf("expected: num: 0 name: ..\n");
+		struct wfs_dentry * dir_dep = mappings[disk]  + dir_inode->blocks[0];
+		printf("  actual: num: %d name: %s\n", dir_dep->num, dir_dep->name);	
+		printf("\n");
+	}
 	// ____________________________________________________
 	//SECOND TEST
-	printf("-----TEST 2-----\n");
-	wfs_mkdir("/hello/goodbye", S_IFDIR);
-	printf("inode bitmap should be updated\n");
-	printf("expected: 00000111 00000000 00000000 00000000\n  actual: ");
-	print_ibitmap(disk);
-	printf("\n");
-	//data bitmaps should be updated
-	printf("data bitmap should be updated\n");
-	printf("expected: 0000111 00000000 00000000 00000000\n  actual: ");
-	print_dbitmap(disk);
-	printf("\n");
-	printf("\n");
-
-	printf("parent inode should have a dir entry for the new directory\n");
-	printf("expected: goodbye num: 2\n");
-	uint de_offset = 1;
-	struct wfs_inode * newdir = dirlookup(dir_inode, "goodbye", &de_offset, disk);
-	p_de = (struct wfs_dentry *)(mappings[disk] + de_offset);
-	printf("  actual: %s num: %d\n", (p_de->name), p_de->num);
-	printf("\n");
-	struct wfs_inode * child_inode = iget(p_de->num, disk);
-	printf("child inode should be initialized properly\n");
-	printf("expected: num: 2 mode: %d size: %d\n", S_IFDIR, 512 * 3);
-	printf("  actual: num: %d mode : %d size %d\n", child_inode->num,
-			 child_inode->mode, child_inode->size); 
+	for(disk = 0; disk < numdisks; disk++){
+		printf("-----TEST 2-----\n");
+		wfs_mkdir("/hello/goodbye", S_IFDIR);
+		printf("inode bitmap should be updated\n");
+		printf("expected: 00000111 00000000 00000000 00000000\n  actual: ");
+		print_ibitmap(disk);
+		printf("\n");
+		//data bitmaps should be updated
+		printf("data bitmap should be updated\n");
+		printf("expected: 0000111 00000000 00000000 00000000\n  actual: ");
+		print_dbitmap(disk);
+		printf("\n");
+		printf("\n");
 	
-	printf("\n");
-	//directory mode should be S_IFDIR
-
-	printf("dir entry inode should have an entry to the parent inode\n");
-	printf("expected: num: 1 name: ..\n");
-	struct wfs_inode * parent = dirlookup(newdir, "..", &de_offset, disk);
-	dir_dep = mappings[disk] +	de_offset; 
-	printf("  actual: num: %d name: %s\n", dir_dep->num, dir_dep->name);	
-
+		printf("parent inode should have a dir entry for the new directory\n");
+		printf("expected: goodbye num: 2\n");
+		uint de_offset = 1;
+		struct wfs_inode * parent_inode = iget(1, disk);
+		struct wfs_inode * newdir = dirlookup(parent_inode, "goodbye", &de_offset, disk);
+		struct wfs_dentry * p_de = (struct wfs_dentry *)(mappings[disk] + de_offset);
+		printf("  actual: %s num: %d\n", (p_de->name), p_de->num);
+		printf("\n");
+		struct wfs_inode * child_inode = iget(p_de->num, disk);
+		printf("child inode should be initialized properly\n");
+		printf("expected: num: 2 mode: %d size: %d\n", S_IFDIR, 512 * 3);
+		printf("  actual: num: %d mode : %d size %d\n", child_inode->num,
+				 child_inode->mode, child_inode->size); 
+		
+		printf("\n");
+		//directory mode should be S_IFDIR
+	
+		printf("dir entry inode should have an entry to the parent inode\n");
+		printf("expected: num: 1 name: ..\n");
+		struct wfs_inode * parent = dirlookup(newdir, "..", &de_offset, disk);
+		struct wfs_dentry * dir_dep = mappings[disk] +	de_offset; 
+		printf("  actual: num: %d name: %s\n", dir_dep->num, dir_dep->name);	
+	}
 }
 
 unsigned char* bget(unsigned int bnum,int disk) {
@@ -586,7 +583,9 @@ int mapDisks(int argc, char* argv[]) {
 int main(int argc, char* argv[])
 {
 	int new_argc; // Used to pass into fuse_main
-	
+
+	// TODO: INITIALIZE Raid_mode
+	raid_mode = 1;
 	new_argc = argc - mapDisks(argc, argv); // Gets difference of what was already read vs what isnt
 	new_argc = argc - new_argc; 
 	char* new_argv[new_argc];
@@ -599,7 +598,7 @@ int main(int argc, char* argv[])
 		new_argv[j] = argv[1 + numdisks + j];
 	}
 
-	test_markbitmapi();
-	//test_mkdir();
+	//test_markbitmapi();
+	test_mkdir();
 	return fuse_main(new_argc, new_argv, &ops, NULL);	
 }
