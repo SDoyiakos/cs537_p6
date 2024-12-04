@@ -503,6 +503,7 @@ int test_markbitmapi(){
 	return 0;
 }
 
+
 unsigned char* bget(unsigned int bnum,int disk) {
 	unsigned char* ret_val;
 	// Checking if bitmap is allocated
@@ -583,6 +584,9 @@ int mapDisks(int argc, char* argv[]) {
 
 int main(int argc, char* argv[])
 {
+	//FOR VALGRIND
+	argc = argc-1;
+	argv = &argv[1];
 	int new_argc; // Used to pass into fuse_main
 
 	// TODO: INITIALIZE Raid_mode

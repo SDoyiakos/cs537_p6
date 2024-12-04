@@ -9,6 +9,9 @@ all: $(BINS)
 
 run_wfs: 
 	./wfs disk.img disk1.img
+
+run_wfs_valgrind:
+	valgrind ./wfs disk.img disk1.img
 redo_disks: mkfs
 	$(MAKE) remove_disks
 	$(MAKE) make_disk
@@ -26,7 +29,11 @@ remove_disks:
 wfs: wfs.c
 	$(CC) $(CFLAGS) wfs.c $(FUSE_CFLAGS) -o wfs
 
-	
+wfs_sanitize: wfs.c
+	$(CC) -Og -ggdb -fsanitize=address $(CFLAGS) wfs.c $(FUSE_CFLAGS) -o wfs	
+
+wfs_valgrind: wfs.c
+	$(CC) -Og -ggdb $(CFLAGS) wfs.c $(FUSE_CFLAGS) -o wfs	
 mkfs: mkfs.c
 	$(CC) $(CFLAGS) -o mkfs mkfs.c
 mkfs_sanitize:
