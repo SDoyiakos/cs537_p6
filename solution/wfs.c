@@ -394,23 +394,32 @@ void print_dbitmap(disk){
 
 }
 
-void print_ibitmap(int disk){
+char * print_ibitmap(int disk){
 	int numinodes = superblocks[disk]->num_inodes;
 	unsigned char* inode_bitmap = mappings[disk] + superblocks[disk]->i_bitmap_ptr;
+	char * ibitmapstr = NULL;
+	int ibitmapstr_size = 0;
 	for(int i = 0; i < numinodes/8; i++){
 		 for (int j = 0; j < 8; j++) {
-			 printf("%d", !!((*(inode_bitmap + i) << j) & 0x80));
+			ibitmapstr_size++;
+			realloc(ibitmapstr, ibitmapstr_size * sizeof(char));
+			printf("realloc passes\n");
+			ibitmapstr[ibitmapstr_size -1] = atoi(!!((*(inode_bitmap + i) << j) & 0x80));
+			printf("%d", !!((*(inode_bitmap + i) << j) & 0x80));
 		 }
 		printf(" ");
 	}
 	printf("\n");
+	printf("BBB: %s\n", ibitmapstr);
+	return ibitmapstr;
 }
 
 int test_markbitmapi(){
 	int disk = 1;
 	printf("test_markbitmap()\n");
 	printf("expected: 00000001 00000000 00000000 00000000\n  actual: ");
-	print_ibitmap(disk);
+	char* actual = print_ibitmap(disk);
+	printf("AAAA: %s\n", actual);
 	markbitmap_i(1, 1, disk);
 	markbitmap_i(31, 1, disk);
 	printf("expected: 00000011 00000000 00000000 10000000\n  actual: ");
@@ -590,7 +599,7 @@ int main(int argc, char* argv[])
 		new_argv[j] = argv[1 + numdisks + j];
 	}
 
-//	test_markbitmapi();
-	test_mkdir();
+	test_markbitmapi();
+	//test_mkdir();
 	return fuse_main(new_argc, new_argv, &ops, NULL);	
 }
