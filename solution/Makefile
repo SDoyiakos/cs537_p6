@@ -7,11 +7,17 @@ FUSE_CFLAGS = `pkg-config fuse --cflags --libs`
 .PHONY: all
 all: $(BINS)
 
+run_wfs_fuse: wfs mnt
+	./wfs disk.img disk1.img -f -s mnt
+
+mnt: 
+	mkdir mnt
 run_wfs: 
 	./wfs disk.img disk1.img
 
 run_wfs_valgrind:
 	valgrind ./wfs disk.img disk1.img
+
 redo_disks: mkfs
 	$(MAKE) remove_disks
 	$(MAKE) make_disk
@@ -34,8 +40,10 @@ wfs_sanitize: wfs.c
 
 wfs_valgrind: wfs.c
 	$(CC) -Og -ggdb $(CFLAGS) wfs.c $(FUSE_CFLAGS) -o wfs	
+
 mkfs: mkfs.c
 	$(CC) $(CFLAGS) -o mkfs mkfs.c
+
 mkfs_sanitize:
 	gcc -Og -ggdb -fsanitize=address -Wall -Werror -pedantic -std=gnu18 -g -o mkfs_sanitize mkfs.c
 

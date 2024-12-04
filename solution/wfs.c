@@ -302,6 +302,7 @@ static int wfs_mknod(const char* path, mode_t mode, dev_t rdev)
 
 static int wfs_mkdir(const char* path, mode_t mode)
 {
+	printf("mkdir()\n");
 	// initialize new directory
 	//FOR RAID 1
 	if(raid_mode == 1){
@@ -346,28 +347,33 @@ static int wfs_mkdir(const char* path, mode_t mode)
 
 static int wfs_unlink(const char *path)
 {
+	printf("wfs_unlink()\n");
 	return 0;
 }
 
 static int wfs_rmdir(const char *path)
 {
+	printf("wfs_rmdir()\n");
 	return 0;
 }
 
 
 static int wfs_read(const char* path, char *buf, size_t size, off_t offset, struct fuse_file_info* fi)
 {
+	printf("wfs_read\n");
 	return 0;
 }
 
 static int wfs_write(const char* path, const char *buf, size_t size, off_t offset, struct fuse_file_info* fi)
 {
+	printf("wfs_write()\n");
 	return 0;
 }
 
 
 static int wfs_getattr(const char* path, struct stat* stbuf)
 {
+	printf("wfs_getattr()\n");
 	return 0;
 }
 
@@ -528,12 +534,12 @@ int mapDisks(int argc, char* argv[]) {
 
 		//read in the disks
 		numdisks++;
-		
+		printf("argv[%d]: %s\n", i, argv[i]);	
 		disks = realloc(disks, sizeof(int) * numdisks);
 		int fd = open(argv[i], O_RDWR);
 	
-		if(fd == -1){
-			printf("failed to open file\n");
+		if(fd == -1){	
+			printf("mapDisks(): failed to open file\n");
 			//free(argv[i]);
 			exit(1);
 		}
@@ -615,6 +621,8 @@ int main(int argc, char* argv[])
 	
 
 	//test_markbitmapi();
-	test_mkdir();
+	//test_mkdir();
+	printf("Mounting file system. new_argc: %d new_argv: %s Mountpoint: %s\n", new_argc, new_argv[0], argv[argc -1] );
 	return fuse_main(new_argc, new_argv, &ops, NULL);	
+
 }
