@@ -49,7 +49,7 @@ int checkDBitmap(unsigned int inum) {
 	bit_val = *data_bitmap;
 	bit_val &= (1<<offset); // Shift over offset times
 	if(bit_val > 0) {
-		printf("Bit Val is %d\n", bit_val);
+		//printf("Bit Val is %d\n", bit_val);
 		return 1;
 	}
 	else {
@@ -68,7 +68,7 @@ int checkIBitmap(unsigned int inum) {
 	bit_val = *inode_bitmap;
 	bit_val &= (1<<offset); // Shift over offset times
 	if(bit_val > 0) {
-		printf("Bit Val is %d\n", bit_val);
+		//printf("Bit Val is %d\n", bit_val);
 		return 1;
 	}
 	else {
@@ -185,9 +185,87 @@ struct wfs_dentry* getDirent(off_t dir_offset) {
 	return  (struct wfs_dentry*)(mappings[0] + superblocks[0]->d_blocks_ptr + dir_offset);
 }
 
-struct wfs_inode* navigateToInode(const char* path) {
-	char* modifiable_path;
+struct wfs_dentry* searchDir(struct wfs_inode* parent, char* dir_name) {
+
+	// Iterates over all directory entries
+	for(int i =0;i < N_BLOCKS;i++) {
+		if(parent->blocks[i] != -1) { // Check if parent block is allocated
+
+			// Iterate over all dirents
+			for(int j = 0; j < BLOCK_SIZE; j+=sizeof(struct wfs_dentry)) {
+				printf("Dir Name is %s\n", getDirent(parent->blocks[i]+j)->name);
+				printf("Search Name is %s\n", dir_name);
+				if(strcmp(getDirent(parent->blocks[i]+j)->name, dir_name) == 0) {
+					
+					return getDirent(parent->blocks[i]+j);
+				}
+			}
+		}
+	}
 	return NULL;
+}
+
+struct wfs_inode* navigateToInode(const char* path) {
+  char* modifiable_path = NULL; // Holds a path we can modify
+	char** path_parts = NULL; // List of strings holding path parts
+	int path_part_ct = 0;
+
+	// Creating a path representation that can be modified 
+	modifiable_path = malloc(sizeof(char) * (strlen(path) + 1));
+	if(modifiable_path == NULL) {
+		return NULL;
+	}
+	strcpy(modifiable_path, path);
+
+	// Tokenize on / while adding it to the list
+	char* curr_part = strtok(modifiable_path, "/");
+	while(curr_part != NULL) {
+		path_part_ct++;
+
+		// If no parts then allocate the list
+		if(path_parts == NULL) {
+			path_parts = malloc(sizeof(char*));
+			if(path_parts == NULL) {
+				return NULL;
+			}
+		}	
+
+		// Reallocate if this is already allocated
+		else if(realloc(path_parts, sizeof(char*) * path_part_ct) == NULL) {
+			return NULL;
+		} 
+		
+		path_parts[path_part_ct - 1] = curr_part; // Set index value
+		curr_part = strtok(NULL, "/"); // Get next token
+	}
+	
+	/** Navigating path **/
+	char* curr_dir_name;
+	struct wfs_inode* curr_inode = iget(0); // Start at root
+	struct wfs_dentry* curr_dir;
+	for(int i = 0; i < path_part_ct - 1;i++) {
+		printf("Path part is: %s\n", path_parts[i]);
+		// Retrieve a directory with the name that is within current inode
+		curr_dir_name = path_parts[i];
+		curr_dir = searchDir(curr_inode, curr_dir_name);
+		if(curr_dir == NULL) {
+			printf("dir not found in current dir\n");
+			return NULL;
+		}
+
+		// Get the inode of this and ensure its a dir
+		curr_inode = iget(curr_dir->num);
+		if((curr_inode->mode & S_IFDIR) == 0) {
+			printf("Not a dir\n");
+			return NULL;
+		}
+	}
+
+	// Retrieve the last file
+	curr_dir_name = path_parts[path_part_ct-1];
+	curr_dir = searchDir(curr_inode, curr_dir_name);
+	curr_inode = iget(curr_dir->num);
+	return curr_inode;
 }
 
 off_t findOpenDir(struct wfs_inode* parent) {
@@ -225,23 +303,6 @@ off_t findOpenDir(struct wfs_inode* parent) {
 		}
 	}
 	return -1; // Return this when no open space is found
-}
-
-struct wfs_dentry* searchDir(struct wfs_inode* parent, char* dir_name) {
-
-	// Iterates over all directory entries
-	for(int i =0;i < N_BLOCKS;i++) {
-		if(parent->blocks[i] != -1) { // Check if parent block is allocated
-
-			// Iterate over all dirents
-			for(int j = 0; j < BLOCK_SIZE; j+=sizeof(struct wfs_dentry)) {
-				if(strcmp(getDirent(parent->blocks[i]+j)->name, dir_name) == 0) {
-					return getDirent(parent->blocks[i]+j);
-				}
-			}
-		}
-	}
-	return NULL;
 }
 
 static int wfs_mkdir(const char* path, mode_t mode) {
@@ -327,6 +388,7 @@ static int wfs_mkdir(const char* path, mode_t mode) {
 	newdir_offset = findOpenDir(curr_inode); // Get an open entry in root		 
 	new_entry =  getDirent(newdir_offset);	 
 	strncpy(new_entry->name, path_parts[path_part_ct-1],MAX_NAME); // Copy name into dentry		 
+	printf("Name is %s\n", new_entry->name);
 	new_entry->num = new_inode->num;
 
 	// Create entry in child dir
@@ -502,5 +564,6 @@ int main(int argc, char* argv[]){
 
 	printf("Return value of mkdir is %d\n", wfs_mkdir("hello", S_IFDIR));
 	printf("Return value of second mkdir is %d\n", wfs_mkdir("hello/world", S_IFDIR));	
+	printf("Navigated inode num is %d\n", navigateToInode("hello/world")->num);
 	//return fuse_main(new_argc, new_argv, &ops, NULL);	
 }
