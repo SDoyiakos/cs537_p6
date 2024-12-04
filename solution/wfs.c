@@ -34,7 +34,7 @@ static struct wfs_inode *current_inode;
 static int DIRSIZ;
 static int raid_mode = 1;
 
-int checkDBitmap(unsigned int inum, int disk) {
+static int checkDBitmap(unsigned int inum, int disk) {
 	int byte_dist = inum/8; // how many byes away from start inum is
 	unsigned char offset = inum % 8; // We want to start at lower bits
 	unsigned char* data_bitmap = mappings[disk] + superblocks[disk]->d_bitmap_ptr;
@@ -51,7 +51,7 @@ int checkDBitmap(unsigned int inum, int disk) {
 	}
 }
 
-int checkIBitmap(unsigned int inum, int disk) {
+static int checkIBitmap(unsigned int inum, int disk) {
 
 	int byte_dist = inum/8; // how many byes away from start inum is
 	unsigned char offset = inum % 8; // We want to start at lower bits
@@ -69,7 +69,7 @@ int checkIBitmap(unsigned int inum, int disk) {
 	}
 }
 
-int markbitmap_d(unsigned int bnum, int used, int disk) {
+static int markbitmap_d(unsigned int bnum, int used, int disk) {
 
 	int byte_dist = bnum/8; // how many byes away from start bnum is
 	unsigned char offset = bnum % 8; // We want to start at lower bits
@@ -88,7 +88,7 @@ int markbitmap_d(unsigned int bnum, int used, int disk) {
 }
 
 
-int markbitmap_i(unsigned int inum, int used, int disk) {
+static int markbitmap_i(unsigned int inum, int used, int disk) {
 
 
 	int byte_dist = inum/8; // how many byes away from start inum is
@@ -107,7 +107,7 @@ int markbitmap_i(unsigned int inum, int used, int disk) {
 	return 0;
 }
 
-struct wfs_inode* iget(unsigned int inum, int disk) {
+static struct wfs_inode* iget(unsigned int inum, int disk) {
 	struct wfs_inode* ret_val;
 	if(checkIBitmap(inum, disk) == 0) {
 		printf("INode is not allocated\n");
@@ -120,7 +120,7 @@ struct wfs_inode* iget(unsigned int inum, int disk) {
 }
 
 
-int findFreeInode(int disk) {
+static int findFreeInode(int disk) {
 
 
     // Iterate over all entries until one that isnt mapped is found
@@ -132,7 +132,7 @@ int findFreeInode(int disk) {
     return -1; // Return -1 if no open mappings are found
 }
 
-int findFreeData(int disk) {
+static int findFreeData(int disk) {
 
     // Iterate over all entries until one that isnt mapped is found
     for(int i =0; i < (int)superblocks[disk]->num_data_blocks;i++) {
@@ -180,7 +180,7 @@ static struct wfs_inode * dirlookup(struct wfs_inode *dp, char *name, uint *entr
 
 
 // Write a new directory entry (name, inum) into the directory dp.
-int
+static int
 dirlink(struct wfs_inode *dp, char *name, uint inum, int disk)
 {
 	struct wfs_dentry * de;
