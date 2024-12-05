@@ -327,9 +327,9 @@ static int linkdir(struct wfs_inode* parent, struct wfs_inode* child, char* chil
 	struct wfs_dentry* child_entry;
 
 	parent_entry = findOpenDir(parent, disk);
-	child_entry = findOpenDir(child, disk);
+	//child_entry = findOpenDir(child, disk);
 
-	if(parent_entry == NULL || child_entry == NULL) {
+	if(parent_entry == NULL) {
 		printf("Parent or child entry not created\n");
 		return -1;
 	}
@@ -338,11 +338,11 @@ static int linkdir(struct wfs_inode* parent, struct wfs_inode* child, char* chil
 	strncpy(parent_entry->name, child_name, MAX_NAME); // Copy child name into parent entry
 	parent_entry->num = child->num;
 	// Enter into child entry
-	child_entry->name[0] = '.';
-	child_entry->name[1] = '.';
-	child_entry->num = parent->num;
+	//child_entry->name[0] = '.';
+	//child_entry->name[1] = '.';
+	//child_entry->num = parent->num;
 
-	parent->nlinks++;
+	//parent->nlinks++;
 	child->nlinks = 1;
 
 	return 0;
