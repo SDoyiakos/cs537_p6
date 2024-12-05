@@ -71,7 +71,7 @@ int checkIBitmap(unsigned int inum) {
 
 	inode_bitmap+= byte_dist; // Go byte_dist bytes over
 	bit_val = *inode_bitmap;
-	bit_val &= (1<<offset); // Shift over offset times
+	bit_val &= (1 << offset); // Shift over offset times
 	if(bit_val > 0) {
 		//printf("Bit Val is %d\n", bit_val);
 		return 1;
@@ -95,7 +95,8 @@ int markbitmap_d(unsigned int bnum, int used, int disk) {
 		*blocks_bitmap &= mask;
 		return 0;
 	}
-	*blocks_bitmap = *blocks_bitmap | (unsigned char) used<<offset;
+	*blocks_bitmap = *blocks_bitmap | used<<offset;
+
 	return 0;
 }
 
@@ -165,6 +166,10 @@ int allocateBlock(int disk) {
 	}
 
 	ret_val = BLOCK_SIZE * data_bit; // Offset is 512 * data_bit
+
+	// Initialize new block to zero
+	memset((unsigned char*)mappings[disk] + superblocks[disk]->d_blocks_ptr + ret_val, 0, BLOCK_SIZE); 
+	
 	markbitmap_d(data_bit, 1, disk); // Mark this as allocated
 	return ret_val; // Returns first entry within block
 }
@@ -248,28 +253,15 @@ Path* splitPath(char* path) {
 /** getInode
 * Returns the inode at a given index
 **/
-struct wfs_inode* getInode(int inum, int disk) {
-
-	// Check if this disk is in bounds
-	if(disk >= numdisks) {
-		printf("Entered disk number greater than numdisks\n");
-		return NULL;
-	}
+struct wfs_inode* getInode(int inum) {
 
 	// Check if its allocated
 	if(checkIBitmap(inum) == 0) {
 		printf("Inode isn't allocated\n");
 		return NULL;
 	}	
-	return (struct wfs_inode*)((void*)mappings[disk] + superblocks[disk]->i_blocks_ptr + (BLOCK_SIZE * inum));
+	return (struct wfs_inode*)((char*)mappings[0] + superblocks[0]->i_blocks_ptr + (BLOCK_SIZE * inum));
 } 
-
-/** linkdir
-* Adds a directory entry from parent to child and another from child to parent
-**/ 
-int linkdir(struct inode* parent, struct inode* child, char* child_name) {
-	return 0;
-}
 
 /** findOpenDir
 * Finds an open directory in the parent directory
@@ -289,18 +281,52 @@ struct wfs_dentry* findOpenDir(struct wfs_inode* parent, int disk) {
 	for(int i = 0;i < N_BLOCKS;i++) {
 		if(parent->blocks[i] != -1) {
 			for(int j = 0;j < BLOCK_SIZE;j+= sizeof(struct wfs_dentry)) {
-				curr_entry = (struct wfs_dentry*)((void*)mappings[disk] + superblocks[disk]->d_blocks_ptr + i + j);
+				curr_entry = (struct wfs_dentry*)((char*)mappings[disk] + superblocks[disk]->d_blocks_ptr + parent->blocks[i] + j);
 				if(curr_entry->name == 0) {
 					return curr_entry;
 				}
 			}
 		}
 	}
+
+	// Allocating a new block
 	for(int i = 0; i < N_BLOCKS;i++) {
 		if(parent->blocks[i] == -1) {
-			
+			parent->blocks[i] = allocateBlock(disk);
+			curr_entry = (struct wfs_dentry*)((char*)mappings[disk] + superblocks[disk]->d_blocks_ptr + parent->blocks[i]);
+			return curr_entry;
 		}
 	}
+	printf("Couldn't find space for dir nor could space be allocated\n");
+	return NULL;
+}
+
+/** linkdir
+* Adds a directory entry from parent to child and another from child to parent
+**/ 
+int linkdir(struct wfs_inode* parent, struct wfs_inode* child, char* child_name, int disk) {
+	struct wfs_dentry* parent_entry;
+	struct wfs_dentry* child_entry;
+
+	parent_entry = findOpenDir(parent, disk);
+	child_entry = findOpenDir(child, disk);
+
+	if(parent_entry == NULL || child_entry == NULL) {
+		printf("Parent or child entry not created\n");
+		return -1;
+	}
+
+	// Enter into parent entry
+	strncpy(parent_entry->name, child_name, MAX_NAME); // Copy child name into parent entry
+	parent_entry->num = child->num;
+
+	// Enter into child entry
+	child_entry->name[0] = '.';
+	child_entry->name[1] = '.';
+	child_entry->num = parent->num;
+
+	return 0;
+	
 }
 
 /** getInode
@@ -329,7 +355,7 @@ struct wfs_dentry* searchDir(struct wfs_inode* dir, char* entry_name, int disk) 
 			for(int j =0; j < BLOCK_SIZE; j+= sizeof(struct wfs_dentry)) {
 
 				// Go to data block offset and then add offset into block and then dirents
-				curr_entry = (struct wfs_dentry*)((void*)mappings[disk] + superblocks[disk]->d_blocks_ptr + i + j);
+				curr_entry = (struct wfs_dentry*)((char*)mappings[disk] + superblocks[disk]->d_blocks_ptr + i + j);
 				if(curr_entry->name != 0 && strcmp(curr_entry->name, entry_name) != 0) { // If matching entry
 					return curr_entry;
 				}
@@ -420,11 +446,11 @@ void print_ibitmap(){
 	printf("\n");
 }
 
-unsigned char* bget(unsigned int bnum) {
+unsigned char* bget(unsigned int bnum, int disk) {
 
 	unsigned char* ret_val;
 	// Checking if bitmap is allocated
-	if(checkDBitmap(bnum) == 0) {
+	if(checkDBitmap(bnum,disk) == 0) {
 		printf("Data Block is not allocated\n");
 		return NULL;
 	}
@@ -514,10 +540,14 @@ int main(int argc, char* argv[]){
 	}
 
 	struct wfs_inode* my_inode;
-	my_inode = getInode(1, 0);
+	my_inode = getInode(1);
 	if(my_inode != NULL) {
 		printf("Inode [%d] has nlinks: %d\n", my_inode->num, my_inode->nlinks);	
 	}
+
+	allocateBlock(0);
+	printf("Check D-Bitmap on disk [%d]: %d\n", 0, checkDBitmap(0, 0));
+	printf("Check D-Bitmap on disk [%d]: %d\n", 1, checkDBitmap(0, 1));
 	
 	
 	//return fuse_main(new_argc, new_argv, &ops, NULL);	
