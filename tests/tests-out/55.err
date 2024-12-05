@@ -1,2 +1,0 @@
-fusermount: entry for /home/doyiakos/private/cs537/Projects/my_p6/tests/mnt not found in /etc/mtab
-tests/55.run: line 11: 3433265 Segmentation fault      (core dumped) ../solution/wfs /tmp/$(whoami)/test-disk3 /tmp/$(whoami)/test-disk2 /tmp/$(whoami)/test-disk1 -s mnt
