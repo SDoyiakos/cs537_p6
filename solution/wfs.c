@@ -384,21 +384,17 @@ static int wfs_getattr(const char* path, struct stat* stbuf)
 	if(file == 0){
 		printf("dir not allocated\n");
 		return -ENOENT;
-	//	pathcpy = strdup(path);
-	//	wfs_mkdir(pathcpy, S_IFDIR); 
-	//	file = namex(pathcpy, 0, name, 0);
-	//	stbuf->st_dev = 0;
-	//	stbuf->st_ino = 0;
-	//	stbuf->st_mode = S_IFDIR;
-	//	stbuf->st_nlink = 1;
-	//	stbuf->st_uid = getuid() ;
-	//	stbuf->st_gid = getgid();
-	//	stbuf->st_rdev = 0;
-	//	stbuf->st_size = file->size;
-	//	stbuf->st_blksize = 512;
-	//	stbuf->st_blocks = file->size /2;
-	//	printf("gave fake stat\n");
 	} 
+	// fill in stat
+	stbuf->st_mode = file->mode;
+	stbuf->st_ino = file->num;
+	stbuf->st_nlink = file->nlinks;
+	stbuf->st_uid = file->uid;
+	stbuf->st_gid = file->gid;
+	stbuf->st_size = file->size;
+	stbuf->st_atim.tv_sec = file->atim;
+	stbuf->st_mtim.tv_sec = file->mtim;
+	stbuf->st_ctim.tv_sec = file->ctim;
 	printf("file->num: %d name: %s\n", file->num, name); 
 	return 0;
 }
