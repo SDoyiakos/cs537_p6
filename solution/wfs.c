@@ -307,42 +307,40 @@ static int wfs_mkdir(const char* path, mode_t mode)
 	printf("mkdir()\n");
 	// initialize new directory
 	//FOR RAID 1
-//	if(raid_mode == 1){
-//		for(int disk = 0; disk < numdisks; disk++) {
-//			char *pathcpy = strdup(path);
-//			char * name = malloc(sizeof(char) * FILE_NAME_MAX);
-//			struct wfs_inode *parent = namex(pathcpy, 1, name, disk);	
-//			int dnum = findFreeInode(disk);
-//			struct wfs_inode * idir = (struct wfs_inode *)((mappings[disk]) + superblocks[disk]->i_blocks_ptr + (512 * dnum));
-//				
-//			idir->num = dnum;
-//			idir->mode = S_IFDIR;
-//			idir->uid = getuid(); 
-//			idir->gid = getgid(); 
-//			idir->size = sizeof(struct wfs_inode) + (512 * 2); 
-//			idir->nlinks = 1; 
-//			time_t t_result = time(NULL);
-//			idir->atim = t_result; 
-//			idir->mtim = t_result;
-//			idir->ctim = t_result;
-//		
-//			// LINK PARENT TO CHILD
-//			if(dirlink(parent, name, idir->num, disk) != 0){
-//				printf("could not enter dir_entry\n");
-//				return(-1);
-//			} 
-//			// LINK CHILD TO PARENT
-//			if(dirlink(idir, "..", parent->num, disk) != 0){
-//				printf("could not enter dir_entry\n");
-//				return(-1);
-//			} 
-//		
-//			//update bitmaps
-//			markbitmap_i(dnum, 1, disk);
-//			free(name);
-//			free(pathcpy);
-//			}
-//	}
+	if(raid_mode == 1){
+		for(int disk = 0; disk < numdisks; disk++) {
+			char *pathcpy = strdup(path);
+			char * name = malloc(sizeof(char) * FILE_NAME_MAX);
+			struct wfs_inode *parent = namex(pathcpy, 1, name, disk);	
+			int dnum = findFreeInode(disk);
+			struct wfs_inode * idir = (struct wfs_inode *)((mappings[disk]) + superblocks[disk]->i_blocks_ptr + (512 * dnum));
+				
+			idir->num = dnum;
+			idir->mode = S_IFDIR;
+			idir->uid = getuid(); 
+			idir->gid = getgid(); 
+			idir->size = sizeof(struct wfs_inode) + (512 * 2); 
+			idir->nlinks = 1; 
+			time_t t_result = time(NULL);
+			idir->atim = t_result; 
+			idir->mtim = t_result;
+			idir->ctim = t_result;
+		
+			// LINK PARENT TO CHILD
+			if(dirlink(parent, name, idir->num, disk) != 0){
+				printf("could not enter dir_entry\n");
+				return(-1);
+			} 
+			// LINK CHILD TO PARENT
+			if(dirlink(idir, "..", parent->num, disk) != 0){
+				printf("could not enter dir_entry\n");
+				return(-1);
+			} 
+		
+			//update bitmaps
+			markbitmap_i(dnum, 1, disk);
+			}
+	}
 
 	return 0;
 }
@@ -372,10 +370,36 @@ static int wfs_write(const char* path, const char *buf, size_t size, off_t offse
 	return 0;
 }
 
-
+//Return file attributes. The "stat" structure is described in detail in the stat(2) manual page. 
+//For the given pathname, this should fill in the elements of the "stat" structure. 
+//If a field is meaningless or semi-meaningless (e.g., st_ino) then it should be set to 0 or given a "reasonable" value
+//This call is pretty much required for a usable filesystem. 
 static int wfs_getattr(const char* path, struct stat* stbuf)
 {
 	printf("wfs_getattr()\n");
+	printf("path: %s\n", path);
+	char * pathcpy = strdup(path);
+	char * name = malloc(sizeof(char) * MAX_NAME);
+	struct wfs_inode * file = namex(pathcpy, 0, name, 0);
+	if(file == 0){
+		printf("dir not allocated\n");
+		return -ENOENT;
+	//	pathcpy = strdup(path);
+	//	wfs_mkdir(pathcpy, S_IFDIR); 
+	//	file = namex(pathcpy, 0, name, 0);
+	//	stbuf->st_dev = 0;
+	//	stbuf->st_ino = 0;
+	//	stbuf->st_mode = S_IFDIR;
+	//	stbuf->st_nlink = 1;
+	//	stbuf->st_uid = getuid() ;
+	//	stbuf->st_gid = getgid();
+	//	stbuf->st_rdev = 0;
+	//	stbuf->st_size = file->size;
+	//	stbuf->st_blksize = 512;
+	//	stbuf->st_blocks = file->size /2;
+	//	printf("gave fake stat\n");
+	} 
+	printf("file->num: %d name: %s\n", file->num, name); 
 	return 0;
 }
 
@@ -606,11 +630,11 @@ int main(int argc, char* argv[])
 	new_argc = argc - mapDisks(argc, argv); // Gets difference of what was already read vs what isnt
 	new_argc = argc - new_argc + 1; 
 	char* new_argv[new_argc];
-	new_argv[0] = argv[0];
 	// initialize currentInode
 	current_inode = roots[0];
 	DIRSIZ = superblocks[0]->num_data_blocks / superblocks[0]->num_inodes;
 	
+	new_argv[0] = argv[0];
 	for(int j = 1;j < new_argc; j++) {
 		new_argv[j] = argv[ numdisks + j];
 	}

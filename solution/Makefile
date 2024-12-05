@@ -12,7 +12,7 @@ run_wfs_fuse: wfs mnt
 
 mnt: 
 	mkdir mnt
-run_wfs: 
+run_wfs: wfs 
 	./wfs disk.img disk1.img
 
 run_wfs_valgrind:
@@ -31,6 +31,12 @@ make_disk:
 	./create_disk.sh
 remove_disks:
 	rm -rf *.img
+
+redo_mount: create_mount run_wfs_fuse
+create_mount:
+	./umount.sh mnt
+	rmdir mnt
+	mkdir mnt
 
 wfs: wfs.c
 	$(CC) $(CFLAGS) wfs.c $(FUSE_CFLAGS) -o wfs
