@@ -25,14 +25,23 @@
 #include "wfs.h"
 #include <stdint.h>
 
-static int* disks;
+static int raid_mode;
+static int * disks;
+static int*  disk_size;
 static unsigned char** mappings;
 static int numdisks = 0;
 static struct wfs_sb ** superblocks;
 static struct wfs_inode **roots;
-static struct wfs_inode *current_inode;
-static int DIRSIZ;
-static int raid_mode = 1;
+
+struct PathListNode {
+	char* data;
+	struct PathListNode* next;
+};
+
+typedef struct {
+	char** path_components;
+	int size;
+} Path;
 
 static int checkDBitmap(unsigned int inum, int disk) {
 	int byte_dist = inum/8; // how many byes away from start inum is
@@ -60,7 +69,7 @@ static int checkIBitmap(unsigned int inum, int disk) {
 
 	inode_bitmap+= byte_dist; // Go byte_dist bytes over
 	bit_val = *inode_bitmap;
-	bit_val &= (1<<offset); // Shift over offset times
+	bit_val &= (1 << offset); // Shift over offset times
 	if(bit_val > 0) {
 		return 1;
 	}
@@ -83,15 +92,14 @@ static int markbitmap_d(unsigned int bnum, int used, int disk) {
 		*blocks_bitmap &= mask;
 		return 0;
 	}
-	*blocks_bitmap = *blocks_bitmap | (unsigned char) used<<offset;
+	*blocks_bitmap = *blocks_bitmap | used<<offset;
+
 	return 0;
 }
 
-
 static int markbitmap_i(unsigned int inum, int used, int disk) {
 
-
-	int byte_dist = inum/8; // how many byes away from start inum is
+	int byte_dist = inum/8; // how many bytes away from start inum is
 	unsigned char offset = inum % 8; // We want to start at lower bits
 	unsigned char* inode_bitmap = mappings[disk] + superblocks[disk]->i_bitmap_ptr;
 
@@ -107,21 +115,7 @@ static int markbitmap_i(unsigned int inum, int used, int disk) {
 	return 0;
 }
 
-static struct wfs_inode* iget(unsigned int inum, int disk) {
-	struct wfs_inode* ret_val;
-	if(checkIBitmap(inum, disk) == 0) {
-		printf("INode is not allocated\n");
-		return NULL;
-	}
-
-	// Go to inode offset
-	ret_val = (struct wfs_inode*)(mappings[disk] + superblocks[disk]->i_blocks_ptr + (inum) * BLOCK_SIZE);
-	return ret_val;
-}
-
-
 static int findFreeInode(int disk) {
-
 
     // Iterate over all entries until one that isnt mapped is found
     for(int i = 0;i < (int)superblocks[disk]->num_inodes;i++) {
@@ -143,149 +137,301 @@ static int findFreeData(int disk) {
     return -1; // Return -1 if no open mappings are found
 }
 
+/** allocateBlock
+* Finds an open block on the given disk and then returns its offset
+**/
+static int allocateBlock(int disk) {
+	int ret_val;
+	int data_bit;
 
-// return 0 if a directory entry already exists, the inode otherwose
-static struct wfs_inode * dirlookup(struct wfs_inode *dp, char *name, uint *entry_offset, int disk) {
-
-	if((dp->mode && S_IFDIR) == 0){
-		printf("not a directory\n");
-		exit(1);	
+	// Find open spot
+	data_bit = findFreeData(disk);
+	if(data_bit == -1) {
+		return -1;
 	}
 
-	for(int i = 0; i < N_BLOCKS; i++){
+	ret_val = BLOCK_SIZE * data_bit; // Offset is 512 * data_bit
 
-		if(dp->blocks[i] == 0) continue;
-		//iterte through all dir entries in a blcok
-		struct wfs_dentry * dir_entry;
-		for(uint j = dp->blocks[i]; j < dp->blocks[i] + BLOCK_SIZE; j+= sizeof(struct wfs_dentry)){
-
-			dir_entry = (struct wfs_dentry *) (mappings[disk] + j);		
-
-			if(*(dir_entry->name) == 0) {
-				continue;
-			}	
-
-			if(strcmp(dir_entry->name, name) == 0){
-
-				if(entry_offset){
-					*entry_offset = j;	
-				}	
+	// Initialize new block to zero
+	memset((unsigned char*)mappings[disk] + superblocks[disk]->d_blocks_ptr + ret_val, 0, BLOCK_SIZE); 
 	
-				return(iget((uint)dir_entry->num, disk));		
-			}	
+	markbitmap_d(data_bit, 1, disk); // Mark this as allocated
+	return ret_val; // Returns first entry within block
+}
+
+/** allocateInode
+* Finds an open inode and then returns its offset from inode ptr
+**/
+static struct wfs_inode* allocateInode(int disk) {
+	int ret_val;
+	int data_bit;
+
+	data_bit = findFreeInode(disk);
+	if(data_bit == -1) {
+		return NULL;
+	}
+
+	ret_val = BLOCK_SIZE * data_bit;
+	markbitmap_i(data_bit, 1, disk);
+
+	// Initialize inode
+	struct wfs_inode* my_inode;
+	my_inode = (struct wfs_inode*)((char*)mappings[disk] + superblocks[disk]->i_blocks_ptr + ret_val);
+	my_inode->mode = 0x777; // RW for UGO
+	my_inode->num = data_bit;
+	my_inode->uid = getuid();
+	my_inode->gid = getgid();
+	my_inode->size = 0;
+	my_inode->nlinks = 0;
+	my_inode->atim = time(0);
+	my_inode->mtim = time(0);
+	my_inode->ctim = time(0);
+	for(int i =0; i < N_BLOCKS;i++) {
+		my_inode->blocks[i] = -1;
+	}
+	return my_inode;
+}
+
+static char* createMalleablePath(const char* path) {
+	char* ret_val;
+	ret_val = malloc(strlen(path) + 1);
+	if(ret_val == NULL) {
+		printf("Error creating malleable path\n");
+	}
+	strcpy(ret_val, path);
+	return ret_val;
+}
+
+/** splitPath
+* Returns a Path struct which will contain an array of each entry in the path
+**/
+static Path* splitPath(char* path) {
+	Path* ret_path;
+	char* split_val;
+	
+	// Allocate the path
+	ret_path = malloc(sizeof(Path));
+	if(ret_path == NULL) {
+		printf("Couldn't allocate path struct\n");
+	}
+	ret_path->size = 0;
+	
+	split_val = strtok(path, "/");
+	
+	while(split_val != NULL) {
+
+		// If size = 0
+		if(ret_path->size == 0) {
+			ret_path->path_components = malloc(sizeof(char*) * 1);
+			if(ret_path == NULL) {
+				printf("Couldn't allocate path arr\n");
+				return NULL;
+			}
+		}
+
+		// If size > 0
+		else {
+			 if(realloc(ret_path->path_components, sizeof(char*) * (ret_path->size + 1)) == NULL) {
+			 	printf("Error, realloc of path failed\n");
+			 	return NULL;
+			 }
+		}
+
+		// Allocate entry
+		ret_path->path_components[ret_path->size] = malloc(strlen(split_val) + 1);
+		if(ret_path->path_components[ret_path->size] == NULL) {
+			printf("Error allocating the paths value\n");
+			return NULL;
+		}
+		// Copy entry
+		strcpy(ret_path->path_components[ret_path->size], split_val);
+		ret_path->size++;
+		split_val = strtok(NULL, "/");
+	}
+	return ret_path;
+}
+
+/** getInode
+* Returns the inode at a given index
+**/
+static struct wfs_inode* getInode(int inum, int disk) {
+
+	// Check if its allocated
+	if(checkIBitmap(inum, disk) == 0) {
+		printf("Inode isn't allocated\n");
+		return NULL;
+	}	
+	return (struct wfs_inode*)((char*)mappings[disk] + superblocks[disk]->i_blocks_ptr + (BLOCK_SIZE * inum));
+} 
+
+/** findOpenDir
+* Finds an open directory in the parent directory
+**/
+static struct wfs_dentry* findOpenDir(struct wfs_inode* parent, int disk) {
+	if((parent->mode & S_IFDIR) == 0) { // Check if dir is a dir
+		printf("Not a directory passed as dir at inode %d with mode %d\n", parent->num, parent->mode & S_IFDIR);
+		return NULL;
+	}
+	if(disk >= numdisks) { // Check if this is a valid disk
+		printf("Not a valid disk\n");
+		return NULL;
+	}
+	struct wfs_dentry* curr_entry;
+
+	// Checking for open spot in already allocated blocks
+	for(int i = 0;i < N_BLOCKS;i++) {
+		if(parent->blocks[i] != -1) {
+			for(int j = 0;j < BLOCK_SIZE;j+= sizeof(struct wfs_dentry)) {
+				curr_entry = (struct wfs_dentry*)((char*)mappings[disk] + superblocks[disk]->d_blocks_ptr + parent->blocks[i] + j);
+				if(curr_entry->name == 0) {
+					return curr_entry;
+				}
+			}
 		}
 	}
+
+	// Allocating a new block
+	for(int i = 0; i < N_BLOCKS;i++) {
+		if(parent->blocks[i] == -1) {
+			parent->blocks[i] = allocateBlock(disk);
+			parent->size+= BLOCK_SIZE;
+			curr_entry = (struct wfs_dentry*)((char*)mappings[disk] + superblocks[disk]->d_blocks_ptr + parent->blocks[i]);
+			return curr_entry;
+		}
+	}
+	printf("Couldn't find space for dir nor could space be allocated\n");
+	return NULL;
+}
+
+/** linkdir
+* Adds a directory entry from parent to child and another from child to parent
+**/ 
+static int linkdir(struct wfs_inode* parent, struct wfs_inode* child, char* child_name, int disk) {
+	struct wfs_dentry* parent_entry;
+	//struct wfs_dentry* child_entry;
+
+	parent_entry = findOpenDir(parent, disk);
+	//child_entry = findOpenDir(child, disk);
+
+	if(parent_entry == NULL) {
+		printf("Parent or child entry not created\n");
+		return -1;
+	}
+
+	// Enter into parent entry
+	strncpy(parent_entry->name, child_name, MAX_NAME); // Copy child name into parent entry
+	parent_entry->num = child->num;
+	// Enter into child entry
+	//child_entry->name[0] = '.';
+	//child_entry->name[1] = '.';
+	//child_entry->num = parent->num;
+
+	//parent->nlinks++;
+	child->nlinks = 1;
+
 	return 0;
+	
 }
 
-
-// Write a new directory entry (name, inum) into the directory dp.
-static int
-dirlink(struct wfs_inode *dp, char *name, uint inum, int disk)
-{
-	struct wfs_dentry * de;
-	struct wfs_inode *ip;
-	// Check that name is not present.
-	if((ip = dirlookup(dp, name, 0, disk)) != 0){
-		printf("a file with the same name adly exists");
-	  return -1;
+/** searchDir
+* Returns the directory entry corresponding to the entry_name in the dir directory
+**/
+struct wfs_dentry* searchDir(struct wfs_inode* dir, char* entry_name, int disk) {
+	if((dir->mode & S_IFDIR) == 0) { // Check if dir is a dir
+		printf("Searching in not a directory\n");
+		return NULL;
 	}
-	
-	// Look for an empty dirent.
-	for(int i = 0; i < N_BLOCKS; i++){
+	if(disk >= numdisks) { // Check if this is a valid disk
+		printf("Not a valid disk\n");
+		return NULL;
+	}
+
+	struct wfs_dentry* curr_entry;
+	for(int i = 0; i < N_BLOCKS;i++) { // Iterate over blocks
+		if(dir->blocks[i] != -1) { // Check if block is used
+			for(int j =0; j < BLOCK_SIZE; j+= sizeof(struct wfs_dentry)) {
+
+				// Go to data block offset and then add offset into block and then dirents
+				curr_entry = (struct wfs_dentry*)((char*)mappings[disk] + superblocks[disk]->d_blocks_ptr + dir->blocks[i] + j);
+				if(curr_entry->name != 0 && strcmp(curr_entry->name, entry_name) == 0) { // If matching entry
+					return curr_entry;
+				}
+			}
+		}
+	}
+	printf("No entry found for %s in directory of inode %d\n", entry_name, dir->num);
+	return NULL;
+}
+
+/** getInode
+* Returns the inode at the end of the path
+**/
+struct wfs_inode* getInodePath(Path* path, int disk) {
+	struct wfs_inode* current_inode;
+	char* curr_entry_name;
+	struct wfs_dentry* curr_entry_dirent;
+	current_inode = roots[disk]; // Get root inode
+	for(int i =0; i < path->size;i++) {
+		curr_entry_name = path->path_components[i]; // Get next child name
+		curr_entry_dirent  = searchDir(current_inode, curr_entry_name, disk);
+		// Check if entry found
+		if(curr_entry_dirent == NULL) {
+			printf("Couldn't find entry %s\n", curr_entry_name);
+			return NULL;
+		}
+		current_inode = getInode(curr_entry_dirent->num, disk);
+	}
+
+	return current_inode;
+}
+
+static int wfs_mkdir(const char* path, mode_t mode) {
+	for(int disk = 0; disk < numdisks;disk++ ) {
+		printf("wfs_mkdir\n");
+		char* malleable_path;
+		Path* p;
+		char* dir_name;
+		struct wfs_inode* parent;
+		struct wfs_inode* child;
+
+		// Making path modifiable
+		malleable_path = createMalleablePath(path);
+		if(malleable_path == NULL) {
+			return -1;
+		}
 		
-		//alocate the first empty block
+		p = splitPath(malleable_path); // Break apart path
 
-		if(dp->blocks[i] == 0){
-			int new_data_num = findFreeData(disk);
-			dp->blocks[i] = superblocks[disk]->d_blocks_ptr + (BLOCK_SIZE * new_data_num);		
-			markbitmap_d(new_data_num, 1, disk);
+		for(int i =0;i<p->size;i++) {
+			printf("Path component [%d]: %s\n", i, p->path_components[i]);
 		}
-	
-		for (off_t block_offset = dp->blocks[i];
-			 block_offset < dp->blocks[i] + BLOCK_SIZE; 
-			 block_offset += sizeof(struct wfs_dentry)){
+		
+		// Strip last element but save name
+		dir_name = p->path_components[p->size-1];
+		p->size--;
 
-			 de = (struct wfs_dentry *)( mappings[disk] + block_offset);
-				
-			 if((*(de->name) == 0)){
-				  strcpy(de->name, name);
-				  de->num = inum;
-				  return 0;
-			}	
+		
+		parent = getInodePath(p, disk);
+		if(parent == NULL) {
+			printf("Error getting parent\n");
+		}
+		
+		child = allocateInode(disk);
+		if(child == NULL) {
+			printf("Error allocating child\n");
+		}
+		
+		child->mode |= mode;
+		child->mode |= S_IFDIR;
 
-		} 
-
-	} 
-	
-	printf("file is full\n");
-	return -1;
-}
- // Copy the next path element from path into name.
-// Return a pointer to the element following the copied one.
-// The returned path has no leading slashes,
-// so the caller can check *path=='\0' to see if the name is the last one.
-// If no name to remove, return 0.
-//
-// Examples:
-//   skipelem("a/bb/c", name) = "bb/c", setting name = "a"
-//   skipelem("///a//bb", name) = "bb", setting name = "a"
-//   skipelem("a", name) = "", setting name = "a"
-//   skipelem("", name) = skipelem("////", name) = 0
-// 
-static char*
-skipelem(char *path, char *name)
-{ 
-  char *s;
-  int len;
-  while(*path == '/')
-    path++;
-  if(*path == 0)
-    return 0;
-  s = path;
-  while(*path != '/' && *path != 0)
-    path++;
-  len = path - s;
-  if(len >= DIRSIZ)
-    memmove(name, s, DIRSIZ);
-  else {
-    memmove(name, s, len);
-    name[len] = 0;
-  }
-  while(*path == '/')
-    path++;
-  return path;
-}
-
-
-static struct wfs_inode* namex(char *path, int nameiparent, char *name, int disk){
-	struct wfs_inode *ip, *next;
-
-	if(*path == '/'){
-		ip = iget(0, disk);
-	}else {
-
-		ip = current_inode;	
+		if(linkdir(parent,child, dir_name, disk) == -1) {
+			printf("Linking error\n");
+		}
 	}
 
-	while((path = skipelem(path, name)) != 0){
-		if((ip->mode && S_IFDIR) == 0){
-			printf("namex failed. file is not a dir\n");
-			exit(1);
-		}
-
-		if(nameiparent && (*path == '\0')){
-			return ip;
-		}
 	
-		if((next = dirlookup(ip, name, 0, disk)) == 0){
-			printf("directory name doesnt exists\n");
-			return 0;
-		}
-		ip = next;
-	}
-
-	return ip;
+	return 0;
+	
 }
 
 static int wfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
@@ -296,51 +442,6 @@ static int wfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 
 static int wfs_mknod(const char* path, mode_t mode, dev_t rdev)
 {
-
-	return 0;
-}
-
-static int wfs_mkdir(const char* path, mode_t mode)
-{
-	printf("mkdir()\n");
-	// initialize new directory
-	//FOR RAID 1
-	if(raid_mode == 1){
-		for(int disk = 0; disk < numdisks; disk++) {
-			char *pathcpy = strdup(path);
-			char * name = malloc(sizeof(char) * FILE_NAME_MAX);
-			struct wfs_inode *parent = namex(pathcpy, 1, name, disk);	
-			int dnum = findFreeInode(disk);
-			struct wfs_inode * idir = (struct wfs_inode *)((mappings[disk]) + superblocks[disk]->i_blocks_ptr + (512 * dnum));
-				
-			idir->num = dnum;
-			idir->mode = S_IFDIR;
-			idir->uid = getuid(); 
-			idir->gid = getgid(); 
-			idir->size = sizeof(struct wfs_inode) + (512 * 2); 
-			idir->nlinks = 1; 
-			time_t t_result = time(NULL);
-			idir->atim = t_result; 
-			idir->mtim = t_result;
-			idir->ctim = t_result;
-		
-			// LINK PARENT TO CHILD
-			if(dirlink(parent, name, idir->num, disk) != 0){
-				printf("could not enter dir_entry\n");
-				return(-1);
-			} 
-			// LINK CHILD TO PARENT
-			if(dirlink(idir, "..", parent->num, disk) != 0){
-				printf("could not enter dir_entry\n");
-				return(-1);
-			} 
-		
-			//update bitmaps
-			markbitmap_i(dnum, 1, disk);
-			free(name);
-			free(pathcpy);
-			}
-	}
 
 	return 0;
 }
@@ -373,10 +474,63 @@ static int wfs_write(const char* path, const char *buf, size_t size, off_t offse
 
 static int wfs_getattr(const char* path, struct stat* stbuf)
 {
-	printf("wfs_getattr()\n");
+	printf("wfs_getattr\n");
+	Path* p;
+	struct wfs_inode* my_inode;
+	char* malleable_path;
+	malleable_path = createMalleablePath(path);
+	if(malleable_path == NULL) {
+		return -1;
+	}
+	
+	p = splitPath(malleable_path);
+	if(p== NULL) {
+		return -1;
+	}
+	
+	my_inode = getInodePath(p, 0);
+	if(my_inode == NULL) {
+		return -ENOENT;
+	}
+	
+	stbuf->st_dev = 0;
+	stbuf->st_ino = my_inode->num;
+	stbuf->st_mode = my_inode->mode;
+	stbuf->st_nlink = my_inode->nlinks;
+	stbuf->st_uid = my_inode->uid;
+	stbuf->st_gid = my_inode->gid;
+	stbuf->st_rdev = 0;
+	stbuf->st_size = my_inode->size;
+	stbuf->st_blksize = BLOCK_SIZE;
+	stbuf->st_blocks = my_inode->size / BLOCK_SIZE;
 	return 0;
 }
 
+
+void print_ibitmap(int disk){
+	int numinodes = superblocks[0]->num_inodes;
+	unsigned char* inode_bitmap = mappings[disk] + superblocks[disk]->i_bitmap_ptr;
+	for(int i = 0; i < numinodes/8; i++){
+		 for (int j = 0; j < 8; j++) {
+			 printf("%d", !!((*(inode_bitmap + i) << j) & 0x80));
+		 }
+		printf(" ");
+	}
+	printf("\n");
+}
+
+void wfs_destroy(void* private_data) {
+	
+	printf("wfs_destroy\n");
+	struct wfs_inode* my_inode;
+	for(int disk =0; disk < numdisks; disk++) {
+		print_ibitmap(disk);
+		my_inode = getInode(0, disk);
+		printf("Inode [%d]: num = %d nlinks = %d\n", 0, my_inode->num, my_inode->nlinks);
+		my_inode = getInode(1, disk);
+		printf("Inode [%d]: num = %d nlinks = %d\n", 1, my_inode->num, my_inode->nlinks);
+	}	
+}
 
 static struct fuse_operations ops = {
   .getattr = wfs_getattr,
@@ -387,6 +541,7 @@ static struct fuse_operations ops = {
   .read    = wfs_read,
   .write   = wfs_write,
   .readdir = wfs_readdir,
+  .destroy = wfs_destroy,
 };
 
 void print_dbitmap(int disk){
@@ -397,125 +552,14 @@ void print_dbitmap(int disk){
 			 printf("%d", !!((*(data_bitmap + i) << j) & 0x80));
 		 }
 		printf(" ");
-}
-
-}
-
-void print_ibitmap(int disk){
-	int numinodes = superblocks[disk]->num_inodes;
-	unsigned char* inode_bitmap = mappings[disk] + superblocks[disk]->d_bitmap_ptr;
-		for(int i = 0; i < numinodes/8; i++){
-
-		 for (int j = 0; j < 8; j++) {
-			printf("%d", !!((*(inode_bitmap + i) << j) & 0x80));
-		 }
-		printf(" ");
 	}
-	printf("\n");
 }
 
-int test_markbitmapi(){
-	int disk = 1;
-	printf("test_markbitmap()\n");
-	printf("expected: 00000001 00000000 00000000 00000000\n  actual: ");
-	print_ibitmap(disk);
-	markbitmap_i(1, 1, disk);
-	markbitmap_i(31, 1, disk);
-	printf("expected: 00000011 00000000 00000000 10000000\n  actual: ");
-	print_ibitmap(disk);	
-	printf("\n");
+unsigned char* bget(unsigned int bnum, int disk) {
 
-	markbitmap_i(1, 0, disk);
-	markbitmap_i(31, 0, disk);
-	printf("expected: 00000001 00000000 00000000 00000000\n  actual: ");
-	print_ibitmap(disk);	
-	return 0;
-}
- int test_mkdir(){
-	int disk = 0;
-	printf("test_mkdir()\n");
-	wfs_mkdir("/hello", S_IFDIR);	
-
-	for(disk = 0; disk < numdisks; disk++){
-		//inode bitmap should be updated
-		printf("-------DISK %d _____", disk);
-		printf("inode bitmap should be updated\n");
-		printf("expected: 00000011 00000000 00000000 00000000\n  actual: ");
-		print_ibitmap(disk);
-		printf("\n");
-		//data bitmaps should be updated
-		printf("data bitmap should be updated\n");
-		printf("expected: 0000011 00000000 00000000 00000000\n  actual: ");
-		print_dbitmap(disk);
-		printf("\n");
-	
-		printf("root inode should have a dir entry for the new directory\n");
-		printf("expected: name: Hello num: 1\n");
-		struct wfs_dentry * p_de = (struct wfs_dentry *)(mappings[disk] + roots[disk]->blocks[0]);
-		printf("  actual: name: %s num: %d\n", (p_de->name), p_de->num);
-		printf("\n");
-	
-		struct wfs_inode * dir_inode = iget(p_de->num, disk);
-		printf("dir entry inode should be initialized properly\n");
-		printf("expected: num: 1 mode: %d size: %d\n", S_IFDIR, 512 * 3);
-		printf("  actual: num: %d mode : %d size %ld\n", dir_inode->num, dir_inode->mode, dir_inode->size); 
-		printf("\n");
-		//directory mode should be S_IFDIR
-	
-		printf("dir entry inode should have an entry to the parent inode\n");
-		printf("expected: num: 0 name: ..\n");
-		struct wfs_dentry * dir_dep = (struct wfs_dentry *)(mappings[disk]  + dir_inode->blocks[0]);
-		printf("  actual: num: %d name: %s\n", dir_dep->num, dir_dep->name);	
-		printf("\n");
-	}
-	// ____________________________________________________
-	//SECOND TEST
-	for(disk = 0; disk < numdisks; disk++){
-		printf("-----TEST 2-----\n");
-		wfs_mkdir("/hello/goodbye", S_IFDIR);
-		printf("inode bitmap should be updated\n");
-		printf("expected: 00000111 00000000 00000000 00000000\n  actual: ");
-		print_ibitmap(disk);
-		printf("\n");
-		//data bitmaps should be updated
-		printf("data bitmap should be updated\n");
-		printf("expected: 0000111 00000000 00000000 00000000\n  actual: ");
-		print_dbitmap(disk);
-		printf("\n");
-		printf("\n");
-	
-		printf("parent inode should have a dir entry for the new directory\n");
-		printf("expected: goodbye num: 2\n");
-		uint de_offset = 1;
-		struct wfs_inode * parent_inode = iget(1, disk);
-		struct wfs_inode * newdir = dirlookup(parent_inode, "goodbye", &de_offset, disk);
-		struct wfs_dentry * p_de = (struct wfs_dentry *)(mappings[disk] + de_offset);
-		printf("  actual: %s num: %d\n", (p_de->name), p_de->num);
-		printf("\n");
-		struct wfs_inode * child_inode = iget(p_de->num, disk);
-		printf("child inode should be initialized properly\n");
-		printf("expected: num: 2 mode: %d size: %d\n", S_IFDIR, 512 * 3);
-		printf("  actual: num: %d mode : %d size %ld\n", child_inode->num,
-				 child_inode->mode, child_inode->size); 
-		
-		printf("\n");
-		//directory mode should be S_IFDIR
-	
-		printf("dir entry inode should have an entry to the parent inode\n");
-		printf("expected: num: 1 name: ..\n");
-		dirlookup(newdir, "..", &de_offset, disk);
-		struct wfs_dentry * dir_dep = (struct wfs_dentry *)(mappings[disk] +	de_offset); 
-		printf("  actual: num: %d name: %s\n", dir_dep->num, dir_dep->name);	
-	}
-
-	return 0;
-}
-
-
-unsigned char* bget(unsigned int bnum,int disk) {
 	unsigned char* ret_val;
 	// Checking if bitmap is allocated
-	if(checkDBitmap(bnum, disk) == 0) {
+	if(checkDBitmap(bnum,disk) == 0) {
 		printf("Data Block is not allocated\n");
 		return NULL;
 	}
@@ -524,7 +568,6 @@ unsigned char* bget(unsigned int bnum,int disk) {
 	ret_val = mappings[disk] + superblocks[disk]->d_blocks_ptr + (bnum * BLOCK_SIZE);
 	return ret_val;
 }
-
 
 int mapDisks(int argc, char* argv[]) {
 	int i = 1;
@@ -546,6 +589,14 @@ int mapDisks(int argc, char* argv[]) {
 		disks[i-1] = fd;
 		i++;
 	}
+
+	// Allocating array to hold the size of the disks
+	disk_size = malloc(sizeof(int) * numdisks);
+	if(disk_size == NULL) {
+		printf("Failed to allocate arr for disk sizes\n");
+		exit(1);
+	}
+	
 	
 	// Allocate region for beginning ptr in mappings
 	mappings = malloc(sizeof(void*)* numdisks); 
@@ -572,8 +623,8 @@ int mapDisks(int argc, char* argv[]) {
 	struct stat my_stat;
 	for(int k = 0; k < numdisks;k++) {
 		fstat(disks[k], &my_stat); // Get file information about disk image
-		mappings[k] = mmap(NULL, my_stat.st_size, PROT_READ|PROT_WRITE, MAP_PRIVATE,disks[k], 0); // Map this image into mem
-
+		mappings[k] = mmap(NULL, my_stat.st_size, PROT_READ|PROT_WRITE, MAP_SHARED,disks[k], 0); // Map this image into mem
+		disk_size[k] = my_stat.st_size;
 		// Check if mmap worked
 		if(mappings[k] == MAP_FAILED) {
 			printf("Error, couldn't mmap disk into memory\n");
@@ -600,29 +651,24 @@ int main(int argc, char* argv[])
 
 	// TODO: INITIALIZE Raid_mode
 	raid_mode = 1;
-	new_argc = argc - mapDisks(argc, argv); // Gets difference of what was already read vs what isnt
-	new_argc = argc - new_argc; 
+	mapDisks(argc, argv);
+	
+	new_argc = (argc - numdisks); // Gets difference of what was already read vs what isnt 
 	char* new_argv[new_argc];
-
-	// initialize currentInode
-	current_inode = roots[0];
-	DIRSIZ = superblocks[0]->num_data_blocks / superblocks[0]->num_inodes;
-
-	for(int j = 0;j < new_argc; j++) {
-		new_argv[j] = argv[1 + numdisks + j];
+	new_argv[0] = "./wfs";
+	for(int j = 1;j < new_argc; j++) {
+		new_argv[j] = argv[numdisks + j];
 	}
 
-  //printf("dirlookup() test. \n Expected: 0\n actual: ");
-	//uint offset = 0;
-	//struct wfs_inode* firstentry =  dirlookup(roots[0], "hello", &offset);
+	for(int i =0;i < new_argc;i++) {
+		printf("New arg [%d]: %s\n", i, new_argv[i]);
+	}
 
-	//char * name = malloc(28 * sizeof(char));	
-	//printf("namex() test: \n Expected: inodeNum = 0, Name = hello \n actual: %d %s\n", namex("/hello", 1, name)->num, name); 
-	
+	printf("Num disks %d\n",numdisks);
+	for(int i =0;i < numdisks;i++) {
+		printf("Disk [%d]: %d\n", i, disk_size[i]);
+	}
 
-	//test_markbitmapi();
-	//test_mkdir();
-	printf("Mounting file system. new_argc: %d new_argv: %s Mountpoint: %s\n", new_argc, new_argv[0], argv[argc -1] );
 	return fuse_main(new_argc, new_argv, &ops, NULL);	
 
 }

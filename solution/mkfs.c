@@ -55,6 +55,10 @@ int init_disks(int * disks, int num_disks, int num_inodes, int num_datablocks, i
 		root_inode->gid = getgid();
 		root_inode->size = 0;
 		root_inode->nlinks = 1;
+		for(int i =0;i < N_BLOCKS;i++) {
+			root_inode->blocks[i] = -1;
+		}
+
 		
 		t_result = time(NULL);
 		root_inode->atim = t_result; 
