@@ -206,6 +206,16 @@ struct wfs_inode* allocateInode() {
 	return my_inode;
 }
 
+char* createMalleablePath(const char* path) {
+	char* ret_val;
+	ret_val = malloc(strlen(path) + 1);
+	if(ret_val == NULL) {
+		printf("Error creating malleable path\n");
+	}
+	strcpy(ret_val, path);
+	return ret_val;
+}
+
 /** splitPath
 * Returns a Path struct which will contain an array of each entry in the path
 **/
@@ -401,8 +411,11 @@ static int wfs_mkdir(const char* path, mode_t mode) {
 	struct wfs_inode* child;
 
 	// Making path modifiable
-	malleable_path = malloc(strlen(path) + 1);
-	strcpy(malleable_path, path);
+	malleable_path = createMalleablePath(path);
+	if(malleable_path == NULL) {
+		return -1;
+	}
+	
 	p = splitPath(malleable_path); // Break apart path
 
 	for(int i =0;i<p->size;i++) {
@@ -471,6 +484,35 @@ static int wfs_write(const char* path, const char *buf, size_t size, off_t offse
 
 static int wfs_getattr(const char* path, struct stat* stbuf)
 {
+	printf("wfs_getattr\n");
+	Path* p;
+	struct wfs_inode* my_inode;
+	char* malleable_path;
+	malleable_path = createMalleablePath(path);
+	if(malleable_path == NULL) {
+		return -1;
+	}
+	
+	p = splitPath(malleable_path);
+	if(p== NULL) {
+		return -1;
+	}
+	
+	my_inode = getInodePath(p, 0);
+	if(my_inode == NULL) {
+		return -ENOENT;
+	}
+	
+	stbuf->st_dev = 0;
+	stbuf->st_ino = my_inode->num;
+	stbuf->st_mode = my_inode->mode;
+	stbuf->st_nlink = my_inode->nlinks;
+	stbuf->st_uid = my_inode->uid;
+	stbuf->st_gid = my_inode->gid;
+	stbuf->st_rdev = 0;
+	stbuf->st_size = my_inode->size;
+	stbuf->st_blksize = BLOCK_SIZE;
+	stbuf->st_blocks = my_inode->size / BLOCK_SIZE;
 	return 0;
 }
 
@@ -587,14 +629,19 @@ int main(int argc, char* argv[]){
 	int new_argc; // Used to pass into fuse_main
 	
 	new_argc = argc - mapDisks(argc, argv); // Gets difference of what was already read vs what isnt
-	new_argc = argc - new_argc; 
+	new_argc = argc - new_argc;
+	new_argc++; 
 	char* new_argv[new_argc];
+	new_argv[0] = "./wfs";
+	for(int j = 1;j < new_argc; j++) {
+		new_argv[j] = argv[numdisks + j];
+	}
 
-	for(int j = 0;j < new_argc; j++) {
-		new_argv[j] = argv[1 + numdisks + j];
+	for(int i =0;i < new_argc;i++) {
+		printf("New arg [%d]: %s\n", i, new_argv[i]);
 	}
 
 	
 	
-	//return fuse_main(new_argc, new_argv, &ops, NULL);	
+	return fuse_main(new_argc, new_argv, &ops, NULL);	
 }
