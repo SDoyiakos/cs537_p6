@@ -283,7 +283,7 @@ static struct wfs_dentry* findOpenDir(struct wfs_inode* parent, int disk) {
 		if(parent->blocks[i] != -1) {
 			for(int j = 0;j < BLOCK_SIZE;j+= sizeof(struct wfs_dentry)) {
 				curr_entry = (struct wfs_dentry*)((char*)mappings[disk] + superblocks[disk]->d_blocks_ptr + parent->blocks[i] + j);
-				if(curr_entry->name == 0) {
+				if(curr_entry->num == 0) {
 					return curr_entry;
 				}
 			}
@@ -291,6 +291,7 @@ static struct wfs_dentry* findOpenDir(struct wfs_inode* parent, int disk) {
 	}
 
 	// Allocating a new block
+	printf("Allocating new blcok for node %d\n", parent->num);
 	for(int i = 0; i < N_BLOCKS;i++) {
 		if(parent->blocks[i] == -1) {
 			parent->blocks[i] = allocateBlock(disk);
@@ -518,13 +519,28 @@ void print_ibitmap(int disk){
 	}
 	printf("\n");
 }
+void print_dbitmap(int disk){
+	int numdblocks = superblocks[disk]->num_data_blocks;
+	unsigned char* data_bitmap = mappings[disk] + superblocks[disk]->d_bitmap_ptr;
+	for(int i = 0; i < numdblocks/8; i++){
+		 for (int j = 0; j < 8; j++) {
+			 printf("%d", !!((*(data_bitmap + i) << j) & 0x80));
+		 }
+		printf(" ");
+	}
+	printf("\n");
+}
 
 void wfs_destroy(void* private_data) {
 	
 	printf("wfs_destroy\n");
 	struct wfs_inode* my_inode;
 	for(int disk =0; disk < numdisks; disk++) {
+		printf("DISK %d\n", disk);
+		printf("Inode bitmap: ");
 		print_ibitmap(disk);
+		printf("Data bitmap: ");
+		print_dbitmap(disk);
 		my_inode = getInode(0, disk);
 		printf("Inode [%d]: num = %d nlinks = %d\n", 0, my_inode->num, my_inode->nlinks);
 		my_inode = getInode(1, disk);
@@ -544,16 +560,6 @@ static struct fuse_operations ops = {
   .destroy = wfs_destroy,
 };
 
-void print_dbitmap(int disk){
-	int numdblocks = superblocks[disk]->num_data_blocks;
-	unsigned char* data_bitmap = mappings[disk] + superblocks[disk]->d_bitmap_ptr;
-	for(int i = 0; i < numdblocks/8; i++){
-		 for (int j = 0; j < 8; j++) {
-			 printf("%d", !!((*(data_bitmap + i) << j) & 0x80));
-		 }
-		printf(" ");
-	}
-}
 
 unsigned char* bget(unsigned int bnum, int disk) {
 
