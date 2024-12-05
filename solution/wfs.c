@@ -291,12 +291,14 @@ static struct wfs_inode* namex(char *path, int nameiparent, char *name, int disk
 static int wfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 			   off_t offset, struct fuse_file_info *fi)
 {
+	printf("wfs_readdir()\n");
 	return 0;
 }
 
 static int wfs_mknod(const char* path, mode_t mode, dev_t rdev)
 {
 
+	printf("wfs_mknod()\n");
 	return 0;
 }
 
@@ -305,42 +307,42 @@ static int wfs_mkdir(const char* path, mode_t mode)
 	printf("mkdir()\n");
 	// initialize new directory
 	//FOR RAID 1
-	if(raid_mode == 1){
-		for(int disk = 0; disk < numdisks; disk++) {
-			char *pathcpy = strdup(path);
-			char * name = malloc(sizeof(char) * FILE_NAME_MAX);
-			struct wfs_inode *parent = namex(pathcpy, 1, name, disk);	
-			int dnum = findFreeInode(disk);
-			struct wfs_inode * idir = (struct wfs_inode *)((mappings[disk]) + superblocks[disk]->i_blocks_ptr + (512 * dnum));
-				
-			idir->num = dnum;
-			idir->mode = S_IFDIR;
-			idir->uid = getuid(); 
-			idir->gid = getgid(); 
-			idir->size = sizeof(struct wfs_inode) + (512 * 2); 
-			idir->nlinks = 1; 
-			time_t t_result = time(NULL);
-			idir->atim = t_result; 
-			idir->mtim = t_result;
-			idir->ctim = t_result;
-		
-			// LINK PARENT TO CHILD
-			if(dirlink(parent, name, idir->num, disk) != 0){
-				printf("could not enter dir_entry\n");
-				return(-1);
-			} 
-			// LINK CHILD TO PARENT
-			if(dirlink(idir, "..", parent->num, disk) != 0){
-				printf("could not enter dir_entry\n");
-				return(-1);
-			} 
-		
-			//update bitmaps
-			markbitmap_i(dnum, 1, disk);
-			free(name);
-			free(pathcpy);
-			}
-	}
+//	if(raid_mode == 1){
+//		for(int disk = 0; disk < numdisks; disk++) {
+//			char *pathcpy = strdup(path);
+//			char * name = malloc(sizeof(char) * FILE_NAME_MAX);
+//			struct wfs_inode *parent = namex(pathcpy, 1, name, disk);	
+//			int dnum = findFreeInode(disk);
+//			struct wfs_inode * idir = (struct wfs_inode *)((mappings[disk]) + superblocks[disk]->i_blocks_ptr + (512 * dnum));
+//				
+//			idir->num = dnum;
+//			idir->mode = S_IFDIR;
+//			idir->uid = getuid(); 
+//			idir->gid = getgid(); 
+//			idir->size = sizeof(struct wfs_inode) + (512 * 2); 
+//			idir->nlinks = 1; 
+//			time_t t_result = time(NULL);
+//			idir->atim = t_result; 
+//			idir->mtim = t_result;
+//			idir->ctim = t_result;
+//		
+//			// LINK PARENT TO CHILD
+//			if(dirlink(parent, name, idir->num, disk) != 0){
+//				printf("could not enter dir_entry\n");
+//				return(-1);
+//			} 
+//			// LINK CHILD TO PARENT
+//			if(dirlink(idir, "..", parent->num, disk) != 0){
+//				printf("could not enter dir_entry\n");
+//				return(-1);
+//			} 
+//		
+//			//update bitmaps
+//			markbitmap_i(dnum, 1, disk);
+//			free(name);
+//			free(pathcpy);
+//			}
+//	}
 
 	return 0;
 }
@@ -592,6 +594,7 @@ int mapDisks(int argc, char* argv[]) {
 
 int main(int argc, char* argv[])
 {
+	printf("main\n");
 	//FOR VALGRIND
 	//argc = argc-1;
 	//argv = &argv[1];
@@ -601,16 +604,20 @@ int main(int argc, char* argv[])
 	// TODO: INITIALIZE Raid_mode
 	raid_mode = 1;
 	new_argc = argc - mapDisks(argc, argv); // Gets difference of what was already read vs what isnt
-	new_argc = argc - new_argc; 
+	new_argc = argc - new_argc + 1; 
 	char* new_argv[new_argc];
-
+	new_argv[0] = argv[0];
 	// initialize currentInode
 	current_inode = roots[0];
 	DIRSIZ = superblocks[0]->num_data_blocks / superblocks[0]->num_inodes;
-
-	for(int j = 0;j < new_argc; j++) {
-		new_argv[j] = argv[1 + numdisks + j];
+	
+	for(int j = 1;j < new_argc; j++) {
+		new_argv[j] = argv[ numdisks + j];
 	}
+	for(int j = 0;j < new_argc ; j++) {
+		printf("new_argv[%d]: %s\n", j, new_argv[j]);
+	}
+	
 
   //printf("dirlookup() test. \n Expected: 0\n actual: ");
 	//uint offset = 0;
@@ -622,7 +629,10 @@ int main(int argc, char* argv[])
 
 	//test_markbitmapi();
 	//test_mkdir();
+	
 	printf("Mounting file system. new_argc: %d new_argv: %s Mountpoint: %s\n", new_argc, new_argv[0], argv[argc -1] );
-	return fuse_main(new_argc, new_argv, &ops, NULL);	
+	printf("fuse rc: %d\n", fuse_main(new_argc, new_argv, &ops, NULL));	
+	return 0;
+	//return fuse_main(new_argc, new_argv, &ops, NULL);	
 
 }

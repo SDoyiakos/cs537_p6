@@ -1,6 +1,6 @@
 BINS = wfs mkfs
 CC = gcc
-CFLAGS = -Wall -pedantic -std=gnu18 -g
+CFLAGS = -Wall -Werror -pedantic -std=gnu18 -g
 FUSE_CFLAGS = `pkg-config fuse --cflags --libs`
 
 
@@ -34,6 +34,8 @@ remove_disks:
 
 wfs: wfs.c
 	$(CC) $(CFLAGS) wfs.c $(FUSE_CFLAGS) -o wfs
+wfs_nowarnings: wfs.c
+	$(CC) -Werror -pedantic -std=gnu18 -g wfs.c $(FUSE_CFLAGS) -o wfs
 
 wfs_sanitize: wfs.c
 	$(CC) -Og -ggdb -fsanitize=address $(CFLAGS) wfs.c $(FUSE_CFLAGS) -o wfs	
