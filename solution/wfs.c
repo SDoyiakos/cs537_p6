@@ -784,8 +784,9 @@ static int wfs_unlink(const char *path)
 {
 	// get the dir and file inode
 	struct wfs_inode *directory;
-	char *dir_name;
 	struct wfs_inode *file;
+	char *dir_name;
+	char *file_name;
 	// RAID 1:
 
 	for (int disk = 0; disk < numdisks; disk++)
@@ -797,15 +798,15 @@ static int wfs_unlink(const char *path)
 			return -1;
 		}
 		Path *splitpath = splitPath(pathcpy);
+		file_name = strdup(splitpath->path_components[splitpath->size]);
+		printf("file_name: %s\n", file_name);
 
-		// Checking if this file already exists
 		if ((file = getInodePath(splitpath, disk)) == NULL)
 		{
 			printf("File doesnt exists\n");
 			return -ENOENT;
 		}
 
-		// need to get dir
 		dir_name = splitpath->path_components[splitpath->size - 1];
 		splitpath->size--;
 		directory = getInodePath(splitpath, disk);
@@ -815,7 +816,7 @@ static int wfs_unlink(const char *path)
 			return -ENOENT;
 		}
 
-		// if nlinks == 1, then delete file
+		// DELETE FILE IF NLINKS== 0
 		file->nlinks--;
 		if (file->nlinks == 0)
 		{
@@ -837,7 +838,7 @@ static int wfs_unlink(const char *path)
 			if (file->blocks[IND_BLOCK] != -1)
 			{
 
-				struct IndirectBlock *indirect_block = (struct IndirectBlock *)(mappings[disk] + superblocks[disk]->d_blocks_ptr + file->blocks[IND_BLOCK]);
+				IndirectBlock *indirect_block = (struct IndirectBlock *)(mappings[disk] + superblocks[disk]->d_blocks_ptr + file->blocks[IND_BLOCK]);
 
 				for (int i = 0; i < indirect_block->size; i++)
 				{
@@ -861,7 +862,8 @@ static int wfs_unlink(const char *path)
 		}
 
 		// remove the directory entry to the file
-		if (deleteDentry(directory, char *entry_name, int disk) != 0)
+		
+		if (deleteDentry(directory, file_name, disk) != 0)
 		{
 			printf("failed to remove file's dentry from dir\n");
 			return -1;
