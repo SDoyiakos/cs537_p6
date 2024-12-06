@@ -507,8 +507,80 @@ static int wfs_rmdir(const char *path)
 
 static int wfs_read(const char* path, char *buf, size_t size, off_t offset, struct fuse_file_info* fi)
 {
-	printf("wfs_read\n");
-	return 0;
+		printf("wfs_read\n");
+		printf("Offset: %ld\nSize: %ld\n", offset, size);
+		int disk = 0;
+		int read_bytes = 0;
+		Path* p;
+		char* malleable_path;
+		struct wfs_inode* my_file;
+		off_t curr_block_offset;
+		unsigned char* curr_block_ptr;
+		int remaining_space;
+		int curr_block_index;
+
+		malleable_path = strdup(path);
+		if(malleable_path == NULL) {
+			printf("Error creating malleable path\n");
+			return -1;
+		}
+
+		p = splitPath(malleable_path);
+		if(p == NULL) {
+			printf("Couldnt split path\n");
+			return -1;
+		}
+
+		my_file = getInodePath(p, disk);
+		if(my_file == NULL) {
+			printf("File does not exist\n");
+			return -ENOENT;
+		}
+
+		curr_block_index = offset/BLOCK_SIZE;
+		curr_block_offset = my_file->blocks[curr_block_index];
+		curr_block_ptr = mappings[disk] + superblocks[disk]->d_blocks_ptr + curr_block_offset;
+		printf("Read to addr is %p, which is in index %d\n", curr_block_ptr, curr_block_index);
+		if(curr_block_offset == -1) {
+			printf("File doesn't span here\n");
+			return read_bytes;
+		}
+
+		remaining_space  = BLOCK_SIZE;
+		while(read_bytes != size) {	
+			// Ensuring block is allocated
+			if(curr_block_offset == -1) {			
+				printf("File does not span here\n");
+				return read_bytes;
+			}
+			
+			// Check if we need to write larger than block space
+			if(size - read_bytes >= remaining_space) {
+				memcpy(buf + read_bytes, curr_block_ptr, remaining_space); // Fill rest of block
+				
+				printf("buf[0] is %c\n", buf[0]);
+				read_bytes+=remaining_space; // Update how many bytes we have written
+
+				// Go to next block
+				curr_block_index++; 
+				curr_block_offset = my_file->blocks[curr_block_index];
+				curr_block_ptr = mappings[disk] + superblocks[disk]->d_blocks_ptr + curr_block_offset;
+				remaining_space = BLOCK_SIZE;		
+			}
+
+			// Write is less than remaining space in block
+			else if(size - read_bytes < remaining_space){
+				memcpy(buf + read_bytes, curr_block_ptr, size - read_bytes); // just write the bytes
+				printf("buf + read bytes is %s\n", buf+read_bytes);
+				read_bytes += (size - read_bytes);
+			}
+			else {
+				printf("Error you cant read more ... you shouldn't be here\n");
+				return -1;
+			}
+			printf("Read bytes is %d\n", read_bytes);
+		}
+	return read_bytes;
 }
 
 static int wfs_write(const char* path, const char *buf, size_t size, off_t offset, struct fuse_file_info* fi)
@@ -555,8 +627,10 @@ static int wfs_write(const char* path, const char *buf, size_t size, off_t offse
 				return -ENOSPC;
 			}
 			my_file->size+=BLOCK_SIZE;
+			
 		}
 		curr_block_ptr = mappings[disk] + superblocks[disk]->d_blocks_ptr + curr_block_offset + (offset%512);
+		printf("Write to addr is %p, which is in index %d\n", curr_block_ptr, curr_block_index);
 		remaining_space = 512-(offset % 512);
 		while(written_bytes != size) {
 
