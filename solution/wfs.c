@@ -43,10 +43,12 @@ typedef struct {
 	int size;
 } Path;
 
-typdef struct {
+
+typedef struct {
 	off_t directblocks[BLOCK_SIZE / sizeof(off_t)];
 	int size;
 } IndirectBlock;
+
 
 static int checkDBitmap(unsigned int inum, int disk) {
 	int byte_dist = inum/8; // how many byes away from start inum is
@@ -332,7 +334,7 @@ static int linkdir(struct wfs_inode* parent, struct wfs_inode* child, char* chil
 /** deleteDentry
 * removes a directory entry
 **/ 
-static struct wfs_dentry* deleteDentry(struct wfs_inode* dir, char* entry_name, int disk) {
+static int deleteDentry(struct wfs_inode* dir, char* entry_name, int disk) {
 	if((dir->mode & S_IFDIR) == 0) { // Check if dir is a dir
 		printf("deleteDentry() not a directory %d\n", dir->num);
 		return -1;
@@ -350,7 +352,7 @@ static struct wfs_dentry* deleteDentry(struct wfs_inode* dir, char* entry_name, 
 				// Go to data block offset and then add offset into block and then dirents
 				curr_entry = (struct wfs_dentry*)((char*)mappings[disk] + superblocks[disk]->d_blocks_ptr + dir->blocks[i] + j);
 				if(curr_entry->name != 0 && strcmp(curr_entry->name, entry_name) == 0) { // If matching entry
-					memset((void*) curr_entry, 0, sizeof(struct wfs_dentry);
+					memset((void*) curr_entry, 0, sizeof(struct wfs_dentry));
 					return 0;
 				}
 			}
@@ -674,74 +676,78 @@ static int wfs_unlink(const char *path)
 	struct wfs_inode * directory;
 	char * dir_name;
 	struct wfs_inode * file;
+	//RAID 1:
 
-	char * pathcpy = strdup(path);
-	if(pathycpy == NULL) {
-		printf("fialed strdup unlink\n");
-		return -1;
-	}
-	char * splitpath = splitPath(pathcpy);
-
-	// Checking if this file already exists
-	if((file = getInodePath(splitpath, disk)) == NULL) {
-		printf("File doesnt exists\n");
-		return -ENOENT;
-	}
+	for(int disk = 0; disk < numdisks; disk++){
+		char * pathcpy = strdup(path);
+		if(pathcpy == NULL) {
+			printf("fialed strdup unlink\n");
+			return -1;
+		}
+		Path * splitpath = splitPath(pathcpy);
 	
-
-	// need to get dir	
-	dir_name = splitpath->path_components[p->size-1];
-	splitpath->size--;
-	directory= getInodePath(splitpath, disk);
-	if(direcotry == NULL) {
-		printf("Error getting directory\n");
-		return -ENOENT;
-	}
-
-	// if nlinks == 1, then delete file
-	file->nlinks--;
-	if(file->nlinks == 0){
-		//TODO: UNCLEAR WHETHER WE MUST ZERO THESE OUT
-		// free the direct blocks
-		for(int d = 0; d < D_BLOCK + 1; d++){
-
-			uint block_num = file->blocks[d] / BLOCK_SIZE;
-			void * block = mappings[disk] + superblocks[disk]->d_blocks_ptr + file->blocks[d];
-			if(memset(block, 0, BLOCK_SIZE) != block){
-				printf("unlink(): memset failed\n");
-			}	
-			markbitmap_d(block_num, 0, disk); 
-		}	
-
-		//free the indirect blocks
-		if(file->blocks[IND_BLOCK] != -1){
-
-			struct IndirectBlock* indirect_block= mappings[disk] + superblocks[disk]->d_blocks_ptr + file->blocks[IND_BLOCK];	
-
-			for(int i = 0; i < indirect_block->size; i+= sizeof(off_t)){
-				int block_num = indirect_block->directblocks[i] / BLOCK_SIZE;
-				void * block = mappings[disk] + superblocks[disk]->d_blocks_ptr + indirect_block->directblocks[i];
+		// Checking if this file already exists
+		if((file = getInodePath(splitpath, disk)) == NULL) {
+			printf("File doesnt exists\n");
+			return -ENOENT;
+		}
+		
+	
+		// need to get dir	
+		dir_name = splitpath->path_components[splitpath->size-1];
+		splitpath->size--;
+		directory= getInodePath(splitpath, disk);
+		if(directory == NULL) {
+			printf("Error getting directory\n");
+			return -ENOENT;
+		}
+	
+		// if nlinks == 1, then delete file
+		file->nlinks--;
+		if(file->nlinks == 0){
+			//TODO: UNCLEAR WHETHER WE MUST ZERO THESE OUT
+			// free the direct blocks
+			for(int d = 0; d < D_BLOCK + 1; d++){
+	
+				uint block_num = file->blocks[d] / BLOCK_SIZE;
+				void * block = mappings[disk] + superblocks[disk]->d_blocks_ptr + file->blocks[d];
 				if(memset(block, 0, BLOCK_SIZE) != block){
 					printf("unlink(): memset failed\n");
 				}	
 				markbitmap_d(block_num, 0, disk); 
+			}	
+	
+			//free the indirect blocks
+			if(file->blocks[IND_BLOCK] != -1){
+	
+				struct IndirectBlock * indirect_block= (struct IndirectBlock *)(mappings[disk] + superblocks[disk]->d_blocks_ptr + file->blocks[IND_BLOCK]);	
+	
+				for(int i = 0; i < indirect_block->size; i++){
+					int block_num = indirect_block->directblocks[i] / BLOCK_SIZE;
+					void * block = mappings[disk] + superblocks[disk]->d_blocks_ptr + indirect_block->directblocks[i];
+					if(memset(block, 0, BLOCK_SIZE) != block){
+						printf("unlink(): memset failed\n");
+					}	
+					markbitmap_d(block_num, 0, disk); 
+				}
 			}
-		}
-
-		// Free the inode
-		int inode_num = file->num;
-		if(memset((void*)file, 0, BLOCK_SIZE) != (void*)file){
-			printf("unlink(): c0ing inode  failed\n");
+	
+			// Free the inode
+			int inode_num = file->num;
+			if(memset((void*)file, 0, BLOCK_SIZE) != (void*)file){
+				printf("unlink(): c0ing inode  failed\n");
+			}	
+			markbitmap_i(inode_num, 0, disk);
 		}	
-		markbitmap_i(inode_num, 0, disk);
+		
+		// remove the directory entry to the file
+		if (deleteDentry(directory, char* entry_name, int disk) != 0){
+			printf("failed to remove file's dentry from dir\n");
+			return -1;
+		}
+	
 	}	
-	
-	// remove the directory entry to the file
-	if (deleteDentry(directory, char* entry_name, int disk) != 0){
-		printf("failed to remove file's dentry from dir\n");
-		return -1;
-	}
-	
+	return 0;
 }
 
 static int wfs_mkdir(const char* path, mode_t mode) {
