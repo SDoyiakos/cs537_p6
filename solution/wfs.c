@@ -43,6 +43,11 @@ typedef struct {
 	int size;
 } Path;
 
+typdef struct {
+	off_t directblocks[BLOCK_SIZE / sizeof(off_t)];
+	int size;
+} IndirectBlock;
+
 static int checkDBitmap(unsigned int inum, int disk) {
 	int byte_dist = inum/8; // how many byes away from start inum is
 	unsigned char offset = inum % 8; // We want to start at lower bits
@@ -85,6 +90,7 @@ static int markbitmap_d(unsigned int bnum, int used, int disk) {
 	unsigned char* blocks_bitmap = mappings[disk] + superblocks[disk]->d_bitmap_ptr;
 
 	blocks_bitmap+= byte_dist; // Go byte_dist bytes over
+	// mark it 0
 	if(used != 1){
 		unsigned char mask = 1;
 		mask = mask<<offset;
@@ -92,6 +98,7 @@ static int markbitmap_d(unsigned int bnum, int used, int disk) {
 		*blocks_bitmap &= mask;
 		return 0;
 	}
+	//mark it one
 	*blocks_bitmap = *blocks_bitmap | used<<offset;
 
 	return 0;
@@ -321,6 +328,36 @@ static int linkdir(struct wfs_inode* parent, struct wfs_inode* child, char* chil
 
 	return 0;
 	
+}
+/** deleteDentry
+* removes a directory entry
+**/ 
+static struct wfs_dentry* deleteDentry(struct wfs_inode* dir, char* entry_name, int disk) {
+	if((dir->mode & S_IFDIR) == 0) { // Check if dir is a dir
+		printf("deleteDentry() not a directory %d\n", dir->num);
+		return -1;
+	}
+	if(disk >= numdisks) { // Check if this is a valid disk
+		printf("Not a valid disk\n");
+		return -1;
+	}
+
+	struct wfs_dentry* curr_entry;
+	for(int i = 0; i < N_BLOCKS;i++) { // Iterate over blocks
+		if(dir->blocks[i] != -1) { // Check if block is used
+			for(int j =0; j < BLOCK_SIZE; j+= sizeof(struct wfs_dentry)) {
+
+				// Go to data block offset and then add offset into block and then dirents
+				curr_entry = (struct wfs_dentry*)((char*)mappings[disk] + superblocks[disk]->d_blocks_ptr + dir->blocks[i] + j);
+				if(curr_entry->name != 0 && strcmp(curr_entry->name, entry_name) == 0) { // If matching entry
+					memset((void*) curr_entry, 0, sizeof(struct wfs_dentry);
+					return 0;
+				}
+			}
+		}
+	}
+	printf("No entry found for %s in directory of inode %d\n", entry_name, dir->num);
+	return -1;
 }
 
 /** searchDir
@@ -625,8 +662,340 @@ static int wfs_mknod(const char* path, mode_t mode, dev_t rdev) {
 	return 0;
 }
 
+//Remove (delete) the given file, symbolic link, hard link, or special node.
+// Note that if you support hard links, unlink only deletes the data when the last hard link is removed.
+// See unlink(2) for details. 
+// To delete files, you should free (unallocate) any data blocks associated with the file, free it's inode, 
+//and remove the directory entry pointing to the file from the parent inode.
+
 static int wfs_unlink(const char *path)
 {
+	// get the dir and file inode
+	struct wfs_inode * directory;
+	char * dir_name;
+	struct wfs_inode * file;
+
+	char * pathcpy = strdup(path);
+	if(pathycpy == NULL) {
+		printf("fialed strdup unlink\n");
+		return -1;
+	}
+	char * splitpath = splitPath(pathcpy);
+
+	// Checking if this file already exists
+	if((file = getInodePath(splitpath, disk)) == NULL) {
+		printf("File doesnt exists\n");
+		return -ENOENT;
+	}
+	
+
+	// need to get dir	
+	dir_name = splitpath->path_components[p->size-1];
+	splitpath->size--;
+	directory= getInodePath(splitpath, disk);
+	if(direcotry == NULL) {
+		printf("Error getting directory\n");
+		return -ENOENT;
+	}
+
+	// if nlinks == 1, then delete file
+	file->nlinks--;
+	if(file->nlinks == 0){
+		//TODO: UNCLEAR WHETHER WE MUST ZERO THESE OUT
+		// free the direct blocks
+		for(int d = 0; d < D_BLOCK + 1; d++){
+
+			uint block_num = file->blocks[d] / BLOCK_SIZE;
+			void * block = mappings[disk] + superblocks[disk]->d_blocks_ptr + file->blocks[d];
+			if(memset(block, 0, BLOCK_SIZE) != block){
+				printf("unlink(): memset failed\n");
+			}	
+			markbitmap_d(block_num, 0, disk); 
+		}	
+
+		//free the indirect blocks
+		if(file->blocks[IND_BLOCK] != -1){
+
+			struct IndirectBlock* indirect_block= mappings[disk] + superblocks[disk]->d_blocks_ptr + file->blocks[IND_BLOCK];	
+
+			for(int i = 0; i < indirect_block->size; i+= sizeof(off_t)){
+				int block_num = indirect_block->directblocks[i] / BLOCK_SIZE;
+				void * block = mappings[disk] + superblocks[disk]->d_blocks_ptr + indirect_block->directblocks[i];
+				if(memset(block, 0, BLOCK_SIZE) != block){
+					printf("unlink(): memset failed\n");
+				}	
+				markbitmap_d(block_num, 0, disk); 
+			}
+		}
+
+		// Free the inode
+		int inode_num = file->num;
+		if(memset((void*)file, 0, BLOCK_SIZE) != (void*)file){
+			printf("unlink(): c0ing inode  failed\n");
+		}	
+		markbitmap_i(inode_num, 0, disk);
+	}	
+	
+	// remove the directory entry to the file
+	if (deleteDentry(directory, char* entry_name, int disk) != 0){
+		printf("failed to remove file's dentry from dir\n");
+		return -1;
+	}
+	
+}
+
+static int wfs_mkdir(const char* path, mode_t mode) {
+	for(int disk = 0; disk < numdisks;disk++ ) {
+		printf("wfs_mkdir\n");
+		char* malleable_path;
+		Path* p;
+		char* dir_name;
+		struct wfs_inode* parent;
+		struct wfs_inode* child;
+
+		// Making path modifiable
+		malleable_path = strdup(path);
+		if(malleable_path == NULL) {
+			return -1;
+		}
+		
+		p = splitPath(malleable_path); // Break apart path
+
+		for(int i =0;i<p->size;i++) {
+			printf("Path component [%d]: %s\n", i, p->path_components[i]);
+		}
+
+		// Checking if this file already exists
+		if(getInodePath(p, disk) != NULL) {
+			printf("File already exists\n");
+			return -EEXIST;
+		}
+		
+		// Strip last element but save name
+		dir_name = p->path_components[p->size-1];
+		p->size--;
+
+		
+		parent = getInodePath(p, disk);
+		if(parent == NULL) {
+			printf("Error getting parent\n");
+		}
+		
+		child = allocateInode(disk);
+		if(child == NULL) {
+			printf("Error allocating child\n");
+			return -ENOSPC;
+		}
+		
+		child->mode |= mode;
+		child->mode |= S_IFDIR;
+
+		if(linkdir(parent,child, dir_name, disk) == -1) {
+			printf("Linking error\n");
+		}
+	}
+
+	
+	return 0;
+	
+}
+
+// finds the dentry at the de_offset, then finds the offset to the next direntry. Returns 
+// eg: let mnt have files a b c. 
+// not
+// findNextDir(root, 0, new_offset) = a, new_offset = offset to b.
+// findNextDir(root, 12, new_off) = b, new_off = offset to c. 
+// findNextDir(root, c_ffset, new_off) = c, new_off = 0
+// note that blocks[b] == offset from d_blocks_ptr
+static struct wfs_dentry* findNextDir(struct wfs_inode * directory, off_t de_offset, off_t * new_de_offset){
+
+	struct wfs_dentry* current_de =(struct wfs_dentry*) (mappings[0] + superblocks[0]->d_blocks_ptr + de_offset);
+	struct wfs_dentry* next_de;
+
+	int start_block = 0;
+
+	// if its the first time calling findNextDir, then get the first de in the dir
+	if (de_offset == 0){
+		int found = 0;	
+
+		for(int b = 0; b < N_BLOCKS; b++) {
+			if(found != 0){
+				break;
+			}
+
+			if(directory->blocks[b] == -1){
+				continue;
+			} 
+			
+			for(int i = 0; i < BLOCK_SIZE; i+= sizeof(struct wfs_dentry)){
+				
+				current_de = (struct wfs_dentry *)(mappings[0] + superblocks[0]->d_blocks_ptr + directory->blocks[b] + i);
+
+				if(current_de->num != 0){
+					de_offset = directory->blocks[b] + i;
+					found = 1;
+					start_block = b;
+					break; 
+				}
+			}
+		}	
+
+		// IF DIR IS EMPTY
+		if(found == 0){
+			return NULL;
+
+		}
+	}	
+
+
+	// NOW that we have de_offset and current_de, find the next_de's offset 
+	for(int b = start_block ; b < N_BLOCKS; b++) {
+
+		if(directory->blocks[b] == -1){
+			continue;
+		} 
+		
+		if(directory->blocks[b] + BLOCK_SIZE < de_offset){
+			printf("<de_off \n");
+			continue;
+		}
+		
+		// sanity check
+		if((de_offset < directory->blocks[b]) | ((directory->blocks[b] + BLOCK_SIZE) < de_offset)){
+			printf("invalid de_offset\n");
+			printf("de_offset: %ld, blocks[b]: %ld BLOCK_SIZE: %d\n", de_offset, directory->blocks[b], BLOCK_SIZE);
+			return NULL;
+		}
+
+		int o;
+		for(o = ((de_offset % BLOCK_SIZE) + sizeof( struct wfs_dentry))
+				; o < BLOCK_SIZE; 
+				o+= sizeof(struct wfs_dentry)){
+
+			next_de = (struct wfs_dentry *) (mappings[0] + superblocks[0]->d_blocks_ptr + o);
+
+			if(next_de->num != 0){
+				*new_de_offset = directory->blocks[b] + o; 	
+				return current_de;	
+			}	
+
+		}
+	}	
+	// Reached end of directory and no new dentries found
+	*new_de_offset = 0;
+	return current_de;
+}
+
+
+//Return one or more directory entries (struct dirent) to the caller
+//It is related to, but not identical to, the readdir(2) and getdents(2) system calls, and the readdir(3) library function. Because of its complexity, it is described separately below. Required for essentially any filesystem,
+// since it's what makes ls and a whole bunch of other things work. 
+//It's also important to note that readdir can return errors in a number of instances; in particular it can return -EBADF if the file handle is invalid, or -ENOENT if you use the path argument and the path doesn't exist.
+
+// We shall let offset = the offset from the  d_blocks_ptr to the first dentry
+// if offset == 0 then we search for the first dentry and set the offset to the next dentry 
+static int wfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
+			   off_t offset, struct fuse_file_info *fi)
+{
+	char * pathcpy = strdup(path);
+	Path * p = splitPath(pathcpy);
+	if(p == NULL) {
+		printf("wfs_readdir(): path is null\n");
+	}
+	struct wfs_inode * directory = getInodePath(p, 0);
+	if(directory == NULL){
+		return -ENOENT;
+	}
+
+	if((directory->mode && S_IFDIR) == 0){
+		return -EBADF;
+	}
+	
+	off_t next_offset = 0;
+	struct wfs_dentry * direntry;
+
+	while(1) {
+
+		direntry = findNextDir(directory, offset, &next_offset);
+
+		if(direntry == NULL){
+			printf("empty dir\n");
+			return 0;
+		}
+		
+		if(filler(buf, direntry->name, NULL, next_offset) != 0){
+			printf("wfs_readdir(): filler returned nonzero\n");
+			return 0;
+		}
+
+		if(next_offset == 0){
+			printf("wfs_readir(): no more files\n");
+			return 0;	
+		}
+		offset = next_offset;
+	}	
+	printf("wfs_readdir(): failed somehow\n"); 
+	return -1;
+}
+
+static int wfs_mknod(const char* path, mode_t mode, dev_t rdev) {
+		for(int disk = 0; disk < numdisks;disk++ ) {
+		printf("wfs_mknod\n");
+		char* malleable_path;
+		Path* p;
+		char* dir_name;
+		struct wfs_inode* parent;
+		struct wfs_inode* child;
+
+		// Making path modifiable
+		malleable_path = strdup(path);
+		if(malleable_path == NULL) {
+			printf("couldnt get malleable path\n");
+			return -1;
+		}
+		
+		p = splitPath(malleable_path); // Break apart path
+
+		for(int i =0;i<p->size;i++) {
+			printf("Path component [%d]: %s\n", i, p->path_components[i]);
+		}
+
+		if(getInodePath(p, disk) != NULL) {
+			printf("File already exists\n");
+			return -EEXIST;
+		}
+		
+		// Strip last element but save name
+		dir_name = p->path_components[p->size-1];
+		p->size--;
+
+		
+		parent = getInodePath(p, disk);
+		if(parent == NULL) {
+			printf("Error getting parent\n");
+			return -1;
+		}
+		
+		child = allocateInode(disk);
+		if(child == NULL) {
+			printf("Error allocating child\n");
+			return -ENOSPC;
+		}
+		
+		child->mode |= mode;
+
+		if(linkdir(parent,child, dir_name, disk) == -1) {
+			printf("Linking error\n");
+		}
+	}
+
+	printf("mknod done\n");
+	return 0;
+}
+
+//Remove (delete) the given file, symbolic link, hard link, or special node.
+// Note that if you support hard links, 
+	// if nlinks== 0, remove the inode and its datablocksjk
 	printf("wfs_unlink()\n");
 	return 0;
 }
