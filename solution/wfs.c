@@ -192,16 +192,6 @@ static struct wfs_inode* allocateInode(int disk) {
 	return my_inode;
 }
 
-static char* createMalleablePath(const char* path) {
-	char* ret_val;
-	ret_val = malloc(strlen(path) + 1);
-	if(ret_val == NULL) {
-		printf("Error creating malleable path\n");
-	}
-	strcpy(ret_val, path);
-	return ret_val;
-}
-
 /** splitPath
 * Returns a Path struct which will contain an array of each entry in the path
 **/
@@ -396,7 +386,7 @@ static int wfs_mkdir(const char* path, mode_t mode) {
 		struct wfs_inode* child;
 
 		// Making path modifiable
-		malleable_path = createMalleablePath(path);
+		malleable_path = strdup(path);
 		if(malleable_path == NULL) {
 			return -1;
 		}
@@ -479,7 +469,7 @@ static int wfs_getattr(const char* path, struct stat* stbuf)
 	Path* p;
 	struct wfs_inode* my_inode;
 	char* malleable_path;
-	malleable_path = createMalleablePath(path);
+	malleable_path = strdup(path);
 	if(malleable_path == NULL) {
 		return -1;
 	}
