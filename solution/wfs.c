@@ -438,8 +438,9 @@ static int wfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 }
 
 static int wfs_mknod(const char* path, mode_t mode, dev_t rdev) {
-		for(int disk = 0; disk < numdisks;disk++ ) {
 		printf("wfs_mknod\n");
+		for(int disk = 0; disk < numdisks;disk++ ) {
+		
 		char* malleable_path;
 		Path* p;
 		char* dir_name;
@@ -507,89 +508,18 @@ static int wfs_rmdir(const char *path)
 
 static int wfs_read(const char* path, char *buf, size_t size, off_t offset, struct fuse_file_info* fi)
 {
-		printf("wfs_read\n");
-		printf("Offset: %ld\nSize: %ld\n", offset, size);
-		int disk = 0;
-		int read_bytes = 0;
-		Path* p;
-		char* malleable_path;
-		struct wfs_inode* my_file;
-		off_t curr_block_offset;
-		unsigned char* curr_block_ptr;
-		int remaining_space;
-		int curr_block_index;
-
-		malleable_path = strdup(path);
-		if(malleable_path == NULL) {
-			printf("Error creating malleable path\n");
-			return -1;
-		}
-
-		p = splitPath(malleable_path);
-		if(p == NULL) {
-			printf("Couldnt split path\n");
-			return -1;
-		}
-
-		my_file = getInodePath(p, disk);
-		if(my_file == NULL) {
-			printf("File does not exist\n");
-			return -ENOENT;
-		}
-
-		curr_block_index = offset/BLOCK_SIZE;
-		curr_block_offset = my_file->blocks[curr_block_index];
-		curr_block_ptr = mappings[disk] + superblocks[disk]->d_blocks_ptr + curr_block_offset;
-		printf("Read to addr is %p, which is in index %d\n", curr_block_ptr, curr_block_index);
-		if(curr_block_offset == -1) {
-			printf("File doesn't span here\n");
-			return read_bytes;
-		}
-
-		remaining_space  = BLOCK_SIZE;
-		while(read_bytes != size) {	
-			// Ensuring block is allocated
-			if(curr_block_offset == -1) {			
-				printf("File does not span here\n");
-				return read_bytes;
-			}
-			
-			// Check if we need to write larger than block space
-			if(size - read_bytes >= remaining_space) {
-				memcpy(buf + read_bytes, curr_block_ptr, remaining_space); // Fill rest of block
-				
-				printf("buf[0] is %c\n", buf[0]);
-				read_bytes+=remaining_space; // Update how many bytes we have written
-
-				// Go to next block
-				curr_block_index++; 
-				curr_block_offset = my_file->blocks[curr_block_index];
-				curr_block_ptr = mappings[disk] + superblocks[disk]->d_blocks_ptr + curr_block_offset;
-				remaining_space = BLOCK_SIZE;		
-			}
-
-			// Write is less than remaining space in block
-			else if(size - read_bytes < remaining_space){
-				memcpy(buf + read_bytes, curr_block_ptr, size - read_bytes); // just write the bytes
-				printf("buf + read bytes is %s\n", buf+read_bytes);
-				read_bytes += (size - read_bytes);
-			}
-			else {
-				printf("Error you cant read more ... you shouldn't be here\n");
-				return -1;
-			}
-			printf("Read bytes is %d\n", read_bytes);
-		}
-	return read_bytes;
+	printf("wfs_read\n");
+	return 1;
 }
 
 static int wfs_write(const char* path, const char *buf, size_t size, off_t offset, struct fuse_file_info* fi)
 {
+	int written_bytes = 0;
 	for(int disk =0; disk < numdisks;disk++) {
 		
 	
 		printf("wfs_write()\n");
-		int written_bytes = 0;
+		written_bytes = 0;
 		Path* p;
 		char* malleable_path;
 		struct wfs_inode* my_file;
@@ -669,7 +599,7 @@ static int wfs_write(const char* path, const char *buf, size_t size, off_t offse
 				printf("Error you cant write more ... you shouldn't be here\n");
 				return -1;
 			}
-			printf("Written bytes is %d\n", written_bytes);
+		
 		}
 
 		// Free data
@@ -677,8 +607,8 @@ static int wfs_write(const char* path, const char *buf, size_t size, off_t offse
 		
 	}
 
-	
-	return 1;
+	printf("Written bytes is %d\n", written_bytes);
+	return written_bytes;
 }
 
 
@@ -871,10 +801,11 @@ int mapDisks(int argc, char* argv[]) {
 }
 
 int my_tests() {
-	char path[] = "hello/world/abby/armstrong/harley";
+	
 	Path* p;
-	p = splitPath(path);
-	printf("p[0] is %s\n", p->path_components[0]);
+	mknod("hello", S_IFREG, 0);
+	char buffer[] = "Hello";
+	//wfs_write("hello", buffer, 6, 0, NULL);
 	return 0;
 }
 
@@ -907,7 +838,8 @@ int main(int argc, char* argv[])
 		printf("Disk [%d]: %d\n", i, disk_size[i]);
 	}
 
-		
+
+	//my_tests();
 	return fuse_main(new_argc, new_argv, &ops, NULL);	
 
 }
