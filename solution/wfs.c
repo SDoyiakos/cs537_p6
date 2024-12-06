@@ -469,7 +469,13 @@ static struct wfs_dentry* findNextDir(struct wfs_inode * directory, off_t de_off
 			
 			}
 		}	
+
+		if(found == 0){
+			return NULL;
+
+		}
 	}	
+
 
 
 	printf("de_offset: %ld, de_offset mod BLOCK_SIZE: %ld start_block: %d\n", de_offset, de_offset % BLOCK_SIZE, start_block);	
@@ -540,9 +546,13 @@ static int wfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	struct wfs_dentry * direntry;
 	while(1) {
 		direntry = findNextDir(directory, offset, &next_offset);
-		if(direntry->name[1] != '\0') printf("not null terminated\n");
 
+		if(direntry == NULL){
+			printf("empty dir\n");
+			return 0;
+		}
 		printf("next_offset : %ld\n", next_offset);
+		
 		if(filler(buf, direntry->name, NULL, next_offset) != 0){
 			printf("wfs_readdir(): filler returned nonzero\n");
 			return 0;
