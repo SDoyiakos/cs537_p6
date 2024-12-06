@@ -406,6 +406,12 @@ static int wfs_mkdir(const char* path, mode_t mode) {
 		for(int i =0;i<p->size;i++) {
 			printf("Path component [%d]: %s\n", i, p->path_components[i]);
 		}
+
+		// Checking if this file already exists
+		if(getInodePath(p, disk)) {
+			printf("File already exists\n");
+			return -EEXIST;
+		}
 		
 		// Strip last element but save name
 		dir_name = p->path_components[p->size-1];
@@ -420,6 +426,7 @@ static int wfs_mkdir(const char* path, mode_t mode) {
 		child = allocateInode(disk);
 		if(child == NULL) {
 			printf("Error allocating child\n");
+			return -ENOSPC;
 		}
 		
 		child->mode |= mode;
@@ -441,9 +448,54 @@ static int wfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	return 0;
 }
 
-static int wfs_mknod(const char* path, mode_t mode, dev_t rdev)
-{
+static int wfs_mknod(const char* path, mode_t mode, dev_t rdev) {
+		for(int disk = 0; disk < numdisks;disk++ ) {
+		printf("wfs_mknod\n");
+		char* malleable_path;
+		Path* p;
+		char* dir_name;
+		struct wfs_inode* parent;
+		struct wfs_inode* child;
 
+		// Making path modifiable
+		malleable_path = createMalleablePath(path);
+		if(malleable_path == NULL) {
+			return -1;
+		}
+		
+		p = splitPath(malleable_path); // Break apart path
+
+		for(int i =0;i<p->size;i++) {
+			printf("Path component [%d]: %s\n", i, p->path_components[i]);
+		}
+
+		if(getInodePath(p, disk)) {
+			printf("File already exists\n");
+			return -EEXIST;
+		}
+		
+		// Strip last element but save name
+		dir_name = p->path_components[p->size-1];
+		p->size--;
+
+		
+		parent = getInodePath(p, disk);
+		if(parent == NULL) {
+			printf("Error getting parent\n");
+		}
+		
+		child = allocateInode(disk);
+		if(child == NULL) {
+			printf("Error allocating child\n");
+			return -ENOSPC;
+		}
+		
+		child->mode |= mode;
+
+		if(linkdir(parent,child, dir_name, disk) == -1) {
+			printf("Linking error\n");
+		}
+	}
 	return 0;
 }
 
