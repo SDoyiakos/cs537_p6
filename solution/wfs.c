@@ -336,7 +336,7 @@ static int linkdir(struct wfs_inode* parent, struct wfs_inode* child, char* chil
 /** searchDir
 * Returns the directory entry corresponding to the entry_name in the dir directory
 **/
-struct wfs_dentry* searchDir(struct wfs_inode* dir, char* entry_name, int disk) {
+static struct wfs_dentry* searchDir(struct wfs_inode* dir, char* entry_name, int disk) {
 	if((dir->mode & S_IFDIR) == 0) { // Check if dir is a dir
 		printf("Searching in not a directory\n");
 		return NULL;
@@ -363,10 +363,11 @@ struct wfs_dentry* searchDir(struct wfs_inode* dir, char* entry_name, int disk) 
 	return NULL;
 }
 
+
 /** getInode
 * Returns the inode at the end of the path
 **/
-struct wfs_inode* getInodePath(Path* path, int disk) {
+static struct wfs_inode* getInodePath(Path* path, int disk) {
 	struct wfs_inode* current_inode;
 	char* curr_entry_name;
 	struct wfs_dentry* curr_entry_dirent;
@@ -434,9 +435,106 @@ static int wfs_mkdir(const char* path, mode_t mode) {
 	
 }
 
+// finds the dentry at the de_offset, then finds the offset to the next offset. Returns 
+// note that blocks[b] == offset from d_blocks_ptr
+static struct wfs_dentry* findNextDir(wfs_inode * directory, off_t de_offset, off_t * new_de_offset){
+
+
+	struct wfs_dentry* current_de = mappings[0] + superblocks[0]->d_blocks_ptr + de_offset;
+	struct wfs_dentry* next_de;
+
+	// if its the first time calling findNextDir, then get the first de in the dir
+	if (de_offset == 0){
+		
+		for(int b = 0; b < N_BLOCKS; b++) {
+				// de_offset either equals blocks[b] + direentry or is 0	
+			if(directory->blocks[b] == -1){
+				continue;
+			} 
+			
+			for(int i = 0; i < BLOCK_SIZE; i+= sizeof(struct wfs_direntry)){
+				current_de = mappings[0] + superblocks[0]->d_blocks_ptr + blocks[b] + i;
+
+				if(current_de->num != -1){
+					de_offset = blocks[b] + i;
+					break; 
+				}
+			
+			}
+		}	
+	}	
+
+	// find the next 
+	int b; 
+	for(b = de_offset/N_BLOCKS; b < N_BLOCKS; b++) {
+		// de_offset either equals blocks[b] + direentry or is 0	
+		if(directory->blocks[b] == -1){
+			continue;
+		} 
+		
+		if(directory->blocks[b] + BLOCK_SIZE < de_offset){
+			continue;
+		}
+		
+		// sanity check
+		if((de_offset < blocks[b]) | (blocks[b] + BLOCK_SIZE < de_offset)){
+			printf("invalid de_offset\n");
+			return NULL:
+		}
+
+		int o;
+		for(o = ((de_offset % BLOCK_SIZE) + struct(wfs_dentry))
+				; o < BLOCK_SIZE; 
+				o+= sizeof(struct wfs_dentry)){
+
+			next_de = mappings[0] + superblocks[0]->d_blocks_ptr + o;
+			if(next_de->num != -1){
+				*new_de_offset = blocks[b] + o; 	
+				return current_de;	
+			}	
+
+		}
+	}	
+	printf("could not find next de\n");
+	return -1;
+}
+//Return one or more directory entries (struct dirent) to the caller
+//It is related to, but not identical to, the readdir(2) and getdents(2) system calls, and the readdir(3) library function. Because of its complexity, it is described separately below. Required for essentially any filesystem,
+// since it's what makes ls and a whole bunch of other things work. 
+//It's also important to note that readdir can return errors in a number of instances; in particular it can return -EBADF if the file handle is invalid, or -ENOENT if you use the path argument and the path doesn't exist.
+
+// We shall let offset = the offset from the  d_blocks_ptr to the first dentry
+// if offset == 0 then we search for the first dentry and set the offset to the next dentry 
 static int wfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 			   off_t offset, struct fuse_file_info *fi)
 {
+	printf("wfs_readdir() path: %s, offset: %ld \n", path, offset);
+	char * pathcpy = strdup(path);
+	Path * p = splitPath(pathcpy);
+	if(p == NULL) {
+		printf("wfs_readdir(): path is null\n");
+	}
+	struct wfs_inode * directory = getInodePath(p, 0);
+	if(directory == NULL){
+		return -ENOENT;
+	}
+
+	if((directory->mode && S_IFDIR) == 0){
+		return -EBADF;
+	}
+	
+	uint next_offset;
+	struct wfs_dentry * direntry = findNextDir(directory, offset, &next_offset);
+	if(direntry == -1){
+		
+	}
+	filler(buf, direntry->name, NULL, next_offset);	
+	
+	//find first directory entry with given offset
+	
+	//put direntry into bull with filler, 
+	// filler(buf, filename, NULL, offset of next directory entry)	
+	 
 	return 0;
 }
 
