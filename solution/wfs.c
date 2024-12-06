@@ -379,6 +379,7 @@ static int linkdir(struct wfs_inode *parent, struct wfs_inode *child, char *chil
  **/
 static int deleteDentry(struct wfs_inode *dir, char *entry_name, int disk)
 {
+	printf("deleteDentry(), dir->num: %d entry_name: %s disk: %d\n",dir->num, entry_name, disk );
 	if ((dir->mode & S_IFDIR) == 0)
 	{ // Check if dir is a dir
 		printf("deleteDentry() not a directory %d\n", dir->num);
@@ -395,12 +396,18 @@ static int deleteDentry(struct wfs_inode *dir, char *entry_name, int disk)
 	{ // Iterate over blocks
 		if (dir->blocks[i] != -1)
 		{ // Check if block is used
-			for (int j = 0; j < BLOCK_SIZE; j += sizeof(struct wfs_dentry))
+			for (uint j = 0; j < BLOCK_SIZE; j += sizeof(struct wfs_dentry))
 			{
 
 				// Go to data block offset and then add offset into block and then dirents
-				curr_entry = (struct wfs_dentry *)((char *)mappings[disk] + superblocks[disk]->d_blocks_ptr + dir->blocks[i] + j);
-				if (curr_entry->name != 0 && strcmp(curr_entry->name, entry_name) == 0)
+				curr_entry = (struct wfs_dentry *)(mappings[disk]
+					 + superblocks[disk]->d_blocks_ptr 
+					+ dir->blocks[i] + j);
+
+				if(curr_entry->num != 0){
+					printf("curr_entry->name: %s\n", curr_entry->name);
+				}
+				if (curr_entry->num != 0 && strcmp(curr_entry->name, entry_name) == 0)
 				{ // If matching entry
 					memset((void *)curr_entry, 0, sizeof(struct wfs_dentry));
 					return 0;
@@ -782,6 +789,7 @@ static int wfs_mkdir(const char *path, mode_t mode)
 
 static int wfs_unlink(const char *path)
 {
+	printf("unlink(): path: %s\n",  path);
 	// get the dir and file inode
 	struct wfs_inode *directory;
 	struct wfs_inode *file;
@@ -791,6 +799,7 @@ static int wfs_unlink(const char *path)
 
 	for (int disk = 0; disk < numdisks; disk++)
 	{
+		printf("disk: %d\n", disk);
 		char *pathcpy = strdup(path);
 		if (pathcpy == NULL)
 		{
@@ -798,7 +807,7 @@ static int wfs_unlink(const char *path)
 			return -1;
 		}
 		Path *splitpath = splitPath(pathcpy);
-		file_name = strdup(splitpath->path_components[splitpath->size]);
+		file_name = splitpath->path_components[splitpath->size-1];
 		printf("file_name: %s\n", file_name);
 
 		if ((file = getInodePath(splitpath, disk)) == NULL)
@@ -807,9 +816,16 @@ static int wfs_unlink(const char *path)
 			return -ENOENT;
 		}
 
-		dir_name = splitpath->path_components[splitpath->size - 1];
-		splitpath->size--;
-		directory = getInodePath(splitpath, disk);
+		
+		if(splitpath->size > 1){
+			splitpath->size--;
+			directory = getInodePath(splitpath, disk);
+			dir_name = splitpath->path_components[splitpath->size - 1];
+		} else {
+			directory = roots[disk];
+			dir_name = "/";
+		}
+
 		if (directory == NULL)
 		{
 			printf("Error getting directory\n");
@@ -820,13 +836,18 @@ static int wfs_unlink(const char *path)
 		file->nlinks--;
 		if (file->nlinks == 0)
 		{
+			printf("shouldn't go here\n");
 			// TODO: UNCLEAR WHETHER WE MUST ZERO THESE OUT
 			//  free the direct blocks
 			for (int d = 0; d < D_BLOCK + 1; d++)
 			{
-
+				if(file->blocks[d] == -1){
+					continue;
+				}
 				uint block_num = file->blocks[d] / BLOCK_SIZE;
+				printf("freeing datablocks: bnum: %d\n", block_num);
 				void *block = mappings[disk] + superblocks[disk]->d_blocks_ptr + file->blocks[d];
+				printf("addresss of block: 0x%x\n", block);
 				if (memset(block, 0, BLOCK_SIZE) != block)
 				{
 					printf("unlink(): memset failed\n");
@@ -837,13 +858,14 @@ static int wfs_unlink(const char *path)
 			// free the indirect blocks
 			if (file->blocks[IND_BLOCK] != -1)
 			{
-
+				printf("INDIRECT\n");
 				IndirectBlock *indirect_block = (struct IndirectBlock *)(mappings[disk] + superblocks[disk]->d_blocks_ptr + file->blocks[IND_BLOCK]);
 
 				for (int i = 0; i < indirect_block->size; i++)
 				{
 					int block_num = indirect_block->directblocks[i] / BLOCK_SIZE;
 					void *block = mappings[disk] + superblocks[disk]->d_blocks_ptr + indirect_block->directblocks[i];
+						
 					if (memset(block, 0, BLOCK_SIZE) != block)
 					{
 						printf("unlink(): memset failed\n");
@@ -863,6 +885,7 @@ static int wfs_unlink(const char *path)
 
 		// remove the directory entry to the file
 		
+	
 		if (deleteDentry(directory, file_name, disk) != 0)
 		{
 			printf("failed to remove file's dentry from dir\n");
@@ -912,7 +935,7 @@ static int wfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 			printf("empty dir\n");
 			return 0;
 		}
-
+		printf("readdir(): direntry->name: %s num: %d\n", direntry->name, direntry->num);
 		if (filler(buf, direntry->name, NULL, next_offset) != 0)
 		{
 			printf("wfs_readdir(): filler returned nonzero\n");
@@ -1120,15 +1143,12 @@ static int wfs_getattr(const char *path, struct stat *stbuf)
 	{
 		return -1;
 	}
-	printf("After dup\n");
 	p = splitPath(malleable_path);
-	printf("After split\n");
 	if (p == NULL)
 	{
 		return -1;
 	}
 
-	printf("P->size is %d\n", p->size);
 	for (int i = 0; i < p->size; i++)
 	{
 		printf("p[%d] is %s\n", i, p->path_components[i]);
