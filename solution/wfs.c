@@ -441,7 +441,6 @@ static int wfs_mkdir(const char* path, mode_t mode) {
 // note that blocks[b] == offset from d_blocks_ptr
 static struct wfs_dentry* findNextDir(struct wfs_inode * directory, off_t de_offset, off_t * new_de_offset){
 
-	printf("findNextDir(): directory->num: %d de_offset: %ld\n", directory->num, de_offset);
 	struct wfs_dentry* current_de =(struct wfs_dentry*) (mappings[0] + superblocks[0]->d_blocks_ptr + de_offset);
 	struct wfs_dentry* next_de;
 
