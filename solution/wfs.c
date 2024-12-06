@@ -212,7 +212,7 @@ static Path* splitPath(char* path) {
 
 		// If size = 0
 		if(ret_path->size == 0) {
-			ret_path->path_components = malloc(sizeof(char*) * 1);
+			ret_path->path_components = malloc(sizeof(char*));
 			if(ret_path == NULL) {
 				printf("Couldn't allocate path arr\n");
 				return NULL;
@@ -221,21 +221,20 @@ static Path* splitPath(char* path) {
 
 		// If size > 0
 		else {
-			 if(realloc(ret_path->path_components, sizeof(char*) * (ret_path->size + 1)) == NULL) {
+			ret_path->path_components = realloc(ret_path->path_components, sizeof(char*) * (ret_path->size + 1));
+			 if(ret_path->path_components == NULL) {
 			 	printf("Error, realloc of path failed\n");
 			 	return NULL;
 			 }
 		}
 
 		// Allocate entry
-		ret_path->path_components[ret_path->size] = malloc(strlen(split_val) + 1);
+		ret_path->path_components[ret_path->size] = strdup(split_val);
 		if(ret_path->path_components[ret_path->size] == NULL) {
 			printf("Error allocating the paths value\n");
 			return NULL;
 		}
-		// Copy entry
-		strcpy(ret_path->path_components[ret_path->size], split_val);
-		ret_path->size++;
+		(ret_path->size)++;
 		split_val = strtok(NULL, "/");
 	}
 	return ret_path;
@@ -598,7 +597,12 @@ static int wfs_write(const char* path, const char *buf, size_t size, off_t offse
 			}
 			printf("Written bytes is %d\n", written_bytes);
 		}
+
+		// Free data
+		free(malleable_path);
+		
 	}
+
 	
 	return 1;
 }
@@ -607,17 +611,25 @@ static int wfs_write(const char* path, const char *buf, size_t size, off_t offse
 static int wfs_getattr(const char* path, struct stat* stbuf)
 {
 	printf("wfs_getattr\n");
+	printf("Path is %s\n", path);
 	Path* p;
 	struct wfs_inode* my_inode;
 	char* malleable_path;
 	malleable_path = strdup(path);
+	
 	if(malleable_path == NULL) {
 		return -1;
 	}
-	
+	printf("After dup\n");
 	p = splitPath(malleable_path);
+	printf("After split\n");
 	if(p== NULL) {
 		return -1;
+	}
+
+	printf("P->size is %d\n", p->size);
+	for(int i =0; i < p->size;i++) {
+		printf("p[%d] is %s\n", i, p->path_components[i]);
 	}
 	
 	my_inode = getInodePath(p, 0);
@@ -635,6 +647,13 @@ static int wfs_getattr(const char* path, struct stat* stbuf)
 	stbuf->st_size = my_inode->size;
 	stbuf->st_blksize = BLOCK_SIZE;
 	stbuf->st_blocks = my_inode->size / BLOCK_SIZE;
+	printf("wfs_getattr done\n");
+
+
+	for(int i =0;i < p->size;i++) {
+			free(p->path_components[i]);
+	}
+	free(p);
 	return 0;
 }
 
@@ -778,9 +797,10 @@ int mapDisks(int argc, char* argv[]) {
 }
 
 int my_tests() {
-	wfs_mknod("hingers", S_IFREG, 0);
-	char buf[1024];
-	wfs_write("hingers", buf, strlen(buf)+ 0,0, NULL);
+	char path[] = "hello/world/abby/armstrong/harley";
+	Path* p;
+	p = splitPath(path);
+	printf("p[0] is %s\n", p->path_components[0]);
 	return 0;
 }
 
@@ -790,7 +810,7 @@ int main(int argc, char* argv[])
 	//FOR VALGRIND
 	//argc = argc-1;
 	//argv = &argv[1];
-
+	
 	int new_argc; // Used to pass into fuse_main
 
 	// TODO: INITIALIZE Raid_mode
@@ -813,8 +833,7 @@ int main(int argc, char* argv[])
 		printf("Disk [%d]: %d\n", i, disk_size[i]);
 	}
 
-
-	//my_tests();
+		
 	return fuse_main(new_argc, new_argv, &ops, NULL);	
 
 }
