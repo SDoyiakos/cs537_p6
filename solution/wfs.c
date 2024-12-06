@@ -192,16 +192,6 @@ static struct wfs_inode* allocateInode(int disk) {
 	return my_inode;
 }
 
-static char* createMalleablePath(const char* path) {
-	char* ret_val;
-	ret_val = malloc(strlen(path) + 1);
-	if(ret_val == NULL) {
-		printf("Error creating malleable path\n");
-	}
-	strcpy(ret_val, path);
-	return ret_val;
-}
-
 /** splitPath
 * Returns a Path struct which will contain an array of each entry in the path
 **/
@@ -222,7 +212,7 @@ static Path* splitPath(char* path) {
 
 		// If size = 0
 		if(ret_path->size == 0) {
-			ret_path->path_components = malloc(sizeof(char*) * 1);
+			ret_path->path_components = malloc(sizeof(char*));
 			if(ret_path == NULL) {
 				printf("Couldn't allocate path arr\n");
 				return NULL;
@@ -231,21 +221,20 @@ static Path* splitPath(char* path) {
 
 		// If size > 0
 		else {
-			 if(realloc(ret_path->path_components, sizeof(char*) * (ret_path->size + 1)) == NULL) {
+			ret_path->path_components = realloc(ret_path->path_components, sizeof(char*) * (ret_path->size + 1));
+			 if(ret_path->path_components == NULL) {
 			 	printf("Error, realloc of path failed\n");
 			 	return NULL;
 			 }
 		}
 
 		// Allocate entry
-		ret_path->path_components[ret_path->size] = malloc(strlen(split_val) + 1);
+		ret_path->path_components[ret_path->size] = strdup(split_val);
 		if(ret_path->path_components[ret_path->size] == NULL) {
 			printf("Error allocating the paths value\n");
 			return NULL;
 		}
-		// Copy entry
-		strcpy(ret_path->path_components[ret_path->size], split_val);
-		ret_path->size++;
+		(ret_path->size)++;
 		split_val = strtok(NULL, "/");
 	}
 	return ret_path;
@@ -283,7 +272,7 @@ static struct wfs_dentry* findOpenDir(struct wfs_inode* parent, int disk) {
 		if(parent->blocks[i] != -1) {
 			for(int j = 0;j < BLOCK_SIZE;j+= sizeof(struct wfs_dentry)) {
 				curr_entry = (struct wfs_dentry*)((char*)mappings[disk] + superblocks[disk]->d_blocks_ptr + parent->blocks[i] + j);
-				if(curr_entry->name == 0) {
+				if(curr_entry->num == 0) {
 					return curr_entry;
 				}
 			}
@@ -291,6 +280,7 @@ static struct wfs_dentry* findOpenDir(struct wfs_inode* parent, int disk) {
 	}
 
 	// Allocating a new block
+	printf("Allocating new blcok for node %d\n", parent->num);
 	for(int i = 0; i < N_BLOCKS;i++) {
 		if(parent->blocks[i] == -1) {
 			parent->blocks[i] = allocateBlock(disk);
@@ -338,7 +328,7 @@ static int linkdir(struct wfs_inode* parent, struct wfs_inode* child, char* chil
 **/
 static struct wfs_dentry* searchDir(struct wfs_inode* dir, char* entry_name, int disk) {
 	if((dir->mode & S_IFDIR) == 0) { // Check if dir is a dir
-		printf("Searching in not a directory\n");
+		printf("Searching in not a directory %d\n", dir->num);
 		return NULL;
 	}
 	if(disk >= numdisks) { // Check if this is a valid disk
@@ -396,7 +386,7 @@ static int wfs_mkdir(const char* path, mode_t mode) {
 		struct wfs_inode* child;
 
 		// Making path modifiable
-		malleable_path = createMalleablePath(path);
+		malleable_path = strdup(path);
 		if(malleable_path == NULL) {
 			return -1;
 		}
@@ -405,6 +395,12 @@ static int wfs_mkdir(const char* path, mode_t mode) {
 
 		for(int i =0;i<p->size;i++) {
 			printf("Path component [%d]: %s\n", i, p->path_components[i]);
+		}
+
+		// Checking if this file already exists
+		if(getInodePath(p, disk) != NULL) {
+			printf("File already exists\n");
+			return -EEXIST;
 		}
 		
 		// Strip last element but save name
@@ -420,6 +416,7 @@ static int wfs_mkdir(const char* path, mode_t mode) {
 		child = allocateInode(disk);
 		if(child == NULL) {
 			printf("Error allocating child\n");
+			return -ENOSPC;
 		}
 		
 		child->mode |= mode;
@@ -560,9 +557,58 @@ static int wfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	return -1;
 }
 
-static int wfs_mknod(const char* path, mode_t mode, dev_t rdev)
-{
+static int wfs_mknod(const char* path, mode_t mode, dev_t rdev) {
+		for(int disk = 0; disk < numdisks;disk++ ) {
+		printf("wfs_mknod\n");
+		char* malleable_path;
+		Path* p;
+		char* dir_name;
+		struct wfs_inode* parent;
+		struct wfs_inode* child;
 
+		// Making path modifiable
+		malleable_path = strdup(path);
+		if(malleable_path == NULL) {
+			printf("couldnt get malleable path\n");
+			return -1;
+		}
+		
+		p = splitPath(malleable_path); // Break apart path
+
+		for(int i =0;i<p->size;i++) {
+			printf("Path component [%d]: %s\n", i, p->path_components[i]);
+		}
+
+		if(getInodePath(p, disk) != NULL) {
+			printf("File already exists\n");
+			return -EEXIST;
+		}
+		
+		// Strip last element but save name
+		dir_name = p->path_components[p->size-1];
+		p->size--;
+
+		
+		parent = getInodePath(p, disk);
+		if(parent == NULL) {
+			printf("Error getting parent\n");
+			return -1;
+		}
+		
+		child = allocateInode(disk);
+		if(child == NULL) {
+			printf("Error allocating child\n");
+			return -ENOSPC;
+		}
+		
+		child->mode |= mode;
+
+		if(linkdir(parent,child, dir_name, disk) == -1) {
+			printf("Linking error\n");
+		}
+	}
+
+	printf("mknod done\n");
 	return 0;
 }
 
@@ -587,25 +633,123 @@ static int wfs_read(const char* path, char *buf, size_t size, off_t offset, stru
 
 static int wfs_write(const char* path, const char *buf, size_t size, off_t offset, struct fuse_file_info* fi)
 {
-	printf("wfs_write()\n");
-	return 0;
+	for(int disk =0; disk < numdisks;disk++) {
+		
+	
+		printf("wfs_write()\n");
+		int written_bytes = 0;
+		Path* p;
+		char* malleable_path;
+		struct wfs_inode* my_file;
+		off_t curr_block_offset;
+		unsigned char* curr_block_ptr;
+		int remaining_space;
+		int curr_block_index;
+
+		malleable_path = strdup(path);
+		if(malleable_path == NULL) {
+			printf("Couldnt create malleable_path\n");
+			return -1;
+		}
+
+		p = splitPath(malleable_path);
+		if(p == NULL) {
+			printf("Couldnt split path\n");
+			return -1;
+		}
+
+		my_file = getInodePath(p, disk);
+		if(my_file == NULL) {
+			printf("File does not exist\n");
+			return -ENOENT;
+		}
+
+		curr_block_index = offset/BLOCK_SIZE;
+		curr_block_offset = my_file->blocks[curr_block_index];
+
+		if(curr_block_offset == -1) { // If block not allocated
+			my_file->blocks[curr_block_index] = allocateBlock(disk); // try to allocate it
+			curr_block_offset = my_file->blocks[curr_block_index];
+			if(my_file->blocks[curr_block_index] == -1) { // If still not allocated then exit on error of no space
+				printf("Cant allocate more file for write\n");
+				return -ENOSPC;
+			}
+			my_file->size+=BLOCK_SIZE;
+		}
+		curr_block_ptr = mappings[disk] + superblocks[disk]->d_blocks_ptr + curr_block_offset + (offset%512);
+		remaining_space = 512-(offset % 512);
+		while(written_bytes != size) {
+
+			// Ensuring block is allocated
+			if(curr_block_offset == -1) {
+				my_file->blocks[curr_block_index] = allocateBlock(disk);
+				
+				if(my_file->blocks[curr_block_index] == -1) { // If still not allocated then exit on error of no space
+					printf("Cant allocate more file for write\n");
+					return -ENOSPC;
+				}
+				curr_block_offset = my_file->blocks[curr_block_index];
+				curr_block_ptr = mappings[disk] + superblocks[disk]->d_blocks_ptr + curr_block_offset;
+				my_file->size+=BLOCK_SIZE;
+			}
+			
+			// Check if we need to write larger than block space
+			if(size - written_bytes >= remaining_space) {
+				memcpy(curr_block_ptr, buf + written_bytes, remaining_space); // Fill rest of block
+				written_bytes+=remaining_space; // Update how many bytes we have written
+
+				// Go to next block
+				curr_block_index++; 
+				curr_block_offset = my_file->blocks[curr_block_index];
+				curr_block_ptr = mappings[disk] + superblocks[disk]->d_blocks_ptr + curr_block_offset;
+				remaining_space = BLOCK_SIZE;
+				
+			}
+
+			// Write is less than remaining space in block
+			else if(size - written_bytes < remaining_space){
+				memcpy(curr_block_ptr, buf + written_bytes, size - written_bytes); // just write the bytes
+				written_bytes += (size - written_bytes);
+			}
+			else {
+				printf("Error you cant write more ... you shouldn't be here\n");
+				return -1;
+			}
+			printf("Written bytes is %d\n", written_bytes);
+		}
+
+		// Free data
+		free(malleable_path);
+		
+	}
+
+	
+	return 1;
 }
 
 
 static int wfs_getattr(const char* path, struct stat* stbuf)
 {
 	printf("wfs_getattr\n");
+	printf("Path is %s\n", path);
 	Path* p;
 	struct wfs_inode* my_inode;
 	char* malleable_path;
-	malleable_path = createMalleablePath(path);
+	malleable_path = strdup(path);
+	
 	if(malleable_path == NULL) {
 		return -1;
 	}
-	
+	printf("After dup\n");
 	p = splitPath(malleable_path);
+	printf("After split\n");
 	if(p== NULL) {
 		return -1;
+	}
+
+	printf("P->size is %d\n", p->size);
+	for(int i =0; i < p->size;i++) {
+		printf("p[%d] is %s\n", i, p->path_components[i]);
 	}
 	
 	my_inode = getInodePath(p, 0);
@@ -623,6 +767,13 @@ static int wfs_getattr(const char* path, struct stat* stbuf)
 	stbuf->st_size = my_inode->size;
 	stbuf->st_blksize = BLOCK_SIZE;
 	stbuf->st_blocks = my_inode->size / BLOCK_SIZE;
+	printf("wfs_getattr done\n");
+
+
+	for(int i =0;i < p->size;i++) {
+			free(p->path_components[i]);
+	}
+	free(p);
 	return 0;
 }
 
@@ -638,13 +789,28 @@ void print_ibitmap(int disk){
 	}
 	printf("\n");
 }
+void print_dbitmap(int disk){
+	int numdblocks = superblocks[disk]->num_data_blocks;
+	unsigned char* data_bitmap = mappings[disk] + superblocks[disk]->d_bitmap_ptr;
+	for(int i = 0; i < numdblocks/8; i++){
+		 for (int j = 0; j < 8; j++) {
+			 printf("%d", !!((*(data_bitmap + i) << j) & 0x80));
+		 }
+		printf(" ");
+	}
+	printf("\n");
+}
 
 void wfs_destroy(void* private_data) {
 	
 	printf("wfs_destroy\n");
 	struct wfs_inode* my_inode;
 	for(int disk =0; disk < numdisks; disk++) {
+		printf("DISK %d\n", disk);
+		printf("Inode bitmap: ");
 		print_ibitmap(disk);
+		printf("Data bitmap: ");
+		print_dbitmap(disk);
 		my_inode = getInode(0, disk);
 		printf("Inode [%d]: num = %d nlinks = %d\n", 0, my_inode->num, my_inode->nlinks);
 		my_inode = getInode(1, disk);
@@ -664,16 +830,6 @@ static struct fuse_operations ops = {
   .destroy = wfs_destroy,
 };
 
-void print_dbitmap(int disk){
-	int numdblocks = superblocks[disk]->num_data_blocks;
-	unsigned char* data_bitmap = mappings[disk] + superblocks[disk]->d_bitmap_ptr;
-	for(int i = 0; i < numdblocks/8; i++){
-		 for (int j = 0; j < 8; j++) {
-			 printf("%d", !!((*(data_bitmap + i) << j) & 0x80));
-		 }
-		printf(" ");
-	}
-}
 
 unsigned char* bget(unsigned int bnum, int disk) {
 
@@ -743,7 +899,7 @@ int mapDisks(int argc, char* argv[]) {
 	struct stat my_stat;
 	for(int k = 0; k < numdisks;k++) {
 		fstat(disks[k], &my_stat); // Get file information about disk image
-		mappings[k] = mmap(NULL, my_stat.st_size, PROT_READ|PROT_WRITE, MAP_SHARED,disks[k], 0); // Map this image into mem
+		mappings[k] = mmap(NULL, my_stat.st_size, PROT_READ|PROT_WRITE, MAP_SHARED ,disks[k], 0); // Map this image into mem
 		disk_size[k] = my_stat.st_size;
 		// Check if mmap worked
 		if(mappings[k] == MAP_FAILED) {
@@ -760,13 +916,21 @@ int mapDisks(int argc, char* argv[]) {
 
 }
 
+int my_tests() {
+	char path[] = "hello/world/abby/armstrong/harley";
+	Path* p;
+	p = splitPath(path);
+	printf("p[0] is %s\n", p->path_components[0]);
+	return 0;
+}
+
 
 int main(int argc, char* argv[])
 {
 	//FOR VALGRIND
 	//argc = argc-1;
 	//argv = &argv[1];
-
+	
 	int new_argc; // Used to pass into fuse_main
 
 	// TODO: INITIALIZE Raid_mode
@@ -789,6 +953,7 @@ int main(int argc, char* argv[])
 		printf("Disk [%d]: %d\n", i, disk_size[i]);
 	}
 
+		
 	return fuse_main(new_argc, new_argv, &ops, NULL);	
 
 }
