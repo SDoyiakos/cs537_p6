@@ -437,7 +437,7 @@ static int wfs_mkdir(const char* path, mode_t mode) {
 
 // finds the dentry at the de_offset, then finds the offset to the next offset. Returns 
 // note that blocks[b] == offset from d_blocks_ptr
-static struct wfs_dentry* findNextDir(wfs_inode * directory, off_t de_offset, off_t * new_de_offset){
+static struct wfs_dentry* findNextDir(struct wfs_inode * directory, off_t de_offset, off_t * new_de_offset){
 
 
 	struct wfs_dentry* current_de = mappings[0] + superblocks[0]->d_blocks_ptr + de_offset;
@@ -452,11 +452,11 @@ static struct wfs_dentry* findNextDir(wfs_inode * directory, off_t de_offset, of
 				continue;
 			} 
 			
-			for(int i = 0; i < BLOCK_SIZE; i+= sizeof(struct wfs_direntry)){
-				current_de = mappings[0] + superblocks[0]->d_blocks_ptr + blocks[b] + i;
+			for(int i = 0; i < BLOCK_SIZE; i+= sizeof(struct wfs_dentry)){
+				current_de = mappings[0] + superblocks[0]->d_blocks_ptr + directory->blocks[b] + i;
 
 				if(current_de->num != -1){
-					de_offset = blocks[b] + i;
+					de_offset = directory->blocks[b] + i;
 					break; 
 				}
 			
@@ -477,19 +477,19 @@ static struct wfs_dentry* findNextDir(wfs_inode * directory, off_t de_offset, of
 		}
 		
 		// sanity check
-		if((de_offset < blocks[b]) | (blocks[b] + BLOCK_SIZE < de_offset)){
+		if((de_offset < directory->blocks[b]) | (directory->blocks[b] + BLOCK_SIZE < de_offset)){
 			printf("invalid de_offset\n");
-			return NULL:
+			return NULL;
 		}
 
 		int o;
-		for(o = ((de_offset % BLOCK_SIZE) + struct(wfs_dentry))
+		for(o = ((de_offset % BLOCK_SIZE) + sizeof( struct wfs_dentry))
 				; o < BLOCK_SIZE; 
 				o+= sizeof(struct wfs_dentry)){
 
 			next_de = mappings[0] + superblocks[0]->d_blocks_ptr + o;
 			if(next_de->num != -1){
-				*new_de_offset = blocks[b] + o; 	
+				*new_de_offset = directory->blocks[b] + o; 	
 				return current_de;	
 			}	
 
@@ -524,18 +524,20 @@ static int wfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	}
 	
 	uint next_offset;
-	struct wfs_dentry * direntry = findNextDir(directory, offset, &next_offset);
-	if(direntry == -1){
-		
-	}
-	filler(buf, direntry->name, NULL, next_offset);	
-	
-	//find first directory entry with given offset
-	
-	//put direntry into bull with filler, 
-	// filler(buf, filename, NULL, offset of next directory entry)	
-	 
-	return 0;
+	struct wfs_dentry * direntry;
+	while(1) {
+		direntry = findNextDir(directory, offset, &next_offset);
+		if(direntry == -1){
+			printf("wfs_readir(): no more files\n");
+			return 0;	
+		}
+		if(filler(buf, direntry->name, NULL, next_offset) != 0){
+			printf("wfs_readdir(): filler returned nonzero\n");
+			return 0;
+		}
+	}	
+	printf("wfs_readdir(): failed somehow\n"); 
+	return -1;
 }
 
 static int wfs_mknod(const char* path, mode_t mode, dev_t rdev)
