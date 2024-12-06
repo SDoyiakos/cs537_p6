@@ -552,6 +552,7 @@ static int wfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 			
 			return 0;	
 		}
+		offset = next_offset;
 	}	
 	printf("wfs_readdir(): failed somehow\n"); 
 	return -1;
