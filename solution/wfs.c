@@ -439,24 +439,34 @@ static int wfs_mkdir(const char* path, mode_t mode) {
 // note that blocks[b] == offset from d_blocks_ptr
 static struct wfs_dentry* findNextDir(struct wfs_inode * directory, off_t de_offset, off_t * new_de_offset){
 
-
-	struct wfs_dentry* current_de = mappings[0] + superblocks[0]->d_blocks_ptr + de_offset;
+	printf("findNextDir(): directory->num: %d de_offset: %ld\n", directory->num, de_offset);
+	struct wfs_dentry* current_de =(struct wfs_dentry*) (mappings[0] + superblocks[0]->d_blocks_ptr + de_offset);
 	struct wfs_dentry* next_de;
 
+	int start_block = 0;
 	// if its the first time calling findNextDir, then get the first de in the dir
 	if (de_offset == 0){
-		
+		int found = 0;	
+
 		for(int b = 0; b < N_BLOCKS; b++) {
 				// de_offset either equals blocks[b] + direentry or is 0	
+			if(found != 0){
+				break;
+			}
+
 			if(directory->blocks[b] == -1){
 				continue;
 			} 
 			
 			for(int i = 0; i < BLOCK_SIZE; i+= sizeof(struct wfs_dentry)){
-				current_de = mappings[0] + superblocks[0]->d_blocks_ptr + directory->blocks[b] + i;
+				
+				current_de = (struct wfs_dentry *)(mappings[0] + superblocks[0]->d_blocks_ptr + directory->blocks[b] + i);
 
-				if(current_de->num != -1){
+				if(current_de->num != 0){
 					de_offset = directory->blocks[b] + i;
+					printf("0 and found dir: de_offset %ld current_de->name: %s\n", de_offset, current_de->name);
+					found = 1;
+					start_block = b;
 					break; 
 				}
 			
@@ -464,21 +474,25 @@ static struct wfs_dentry* findNextDir(struct wfs_inode * directory, off_t de_off
 		}	
 	}	
 
+
+	printf("de_offset: %ld, de_offset mod BLOCK_SIZE: %ld start_block: %d\n", de_offset, de_offset % BLOCK_SIZE, start_block);	
 	// find the next 
-	int b; 
-	for(b = de_offset/N_BLOCKS; b < N_BLOCKS; b++) {
+	for(int b = start_block ; b < N_BLOCKS; b++) {
 		// de_offset either equals blocks[b] + direentry or is 0	
 		if(directory->blocks[b] == -1){
+			printf("block not alloc\n");
 			continue;
 		} 
 		
 		if(directory->blocks[b] + BLOCK_SIZE < de_offset){
+			printf("<de_off \n");
 			continue;
 		}
 		
 		// sanity check
-		if((de_offset < directory->blocks[b]) | (directory->blocks[b] + BLOCK_SIZE < de_offset)){
+		if((de_offset < directory->blocks[b]) | ((directory->blocks[b] + BLOCK_SIZE) < de_offset)){
 			printf("invalid de_offset\n");
+			printf("de_offset: %ld, blocks[b]: %ld BLOCK_SIZE: %d\n", de_offset, directory->blocks[b], BLOCK_SIZE);
 			return NULL;
 		}
 
@@ -487,16 +501,18 @@ static struct wfs_dentry* findNextDir(struct wfs_inode * directory, off_t de_off
 				; o < BLOCK_SIZE; 
 				o+= sizeof(struct wfs_dentry)){
 
-			next_de = mappings[0] + superblocks[0]->d_blocks_ptr + o;
-			if(next_de->num != -1){
+			next_de = (struct wfs_dentry *) (mappings[0] + superblocks[0]->d_blocks_ptr + o);
+			if(next_de->num != 0){
 				*new_de_offset = directory->blocks[b] + o; 	
+				printf("found next dir. o: %d next_de->name: %s\n", o, next_de->name);
 				return current_de;	
 			}	
 
 		}
 	}	
 	printf("could not find next de\n");
-	return -1;
+	*new_de_offset = 0;
+	return current_de;
 }
 //Return one or more directory entries (struct dirent) to the caller
 //It is related to, but not identical to, the readdir(2) and getdents(2) system calls, and the readdir(3) library function. Because of its complexity, it is described separately below. Required for essentially any filesystem,
@@ -523,17 +539,21 @@ static int wfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 		return -EBADF;
 	}
 	
-	uint next_offset;
+	off_t next_offset = 0;
 	struct wfs_dentry * direntry;
 	while(1) {
 		direntry = findNextDir(directory, offset, &next_offset);
-		if(direntry == -1){
-			printf("wfs_readir(): no more files\n");
-			return 0;	
-		}
+		if(direntry->name[1] != '\0') printf("not null terminated\n");
+
+		printf("next_offset : %ld\n", next_offset);
 		if(filler(buf, direntry->name, NULL, next_offset) != 0){
 			printf("wfs_readdir(): filler returned nonzero\n");
 			return 0;
+		}
+		if(next_offset == 0){
+			printf("wfs_readir(): no more files\n");
+			
+			return 0;	
 		}
 	}	
 	printf("wfs_readdir(): failed somehow\n"); 
