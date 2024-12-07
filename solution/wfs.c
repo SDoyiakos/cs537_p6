@@ -953,6 +953,70 @@ static int wfs_rmdir(const char *path)
 	return 0;
 }
 
+// Return one or more directory entries (struct dirent) to the caller
+// It is related to, but not identical to, the readdir(2) and getdents(2) system calls, and the readdir(3) library function. Because of its complexity, it is described separately below. Required for essentially any filesystem,
+//  since it's what makes ls and a whole bunch of other things work.
+// It's also important to note that readdir can return errors in a number of instances; in particular it can return -EBADF if the file handle is invalid, or -ENOENT if you use the path argument and the path doesn't exist.
+
+// We shall let offset = the offset from the  d_blocks_ptr to the first dentry
+// if offset == 0 then we search for the first dentry and set the offset to the next dentry
+static int wfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
+					   off_t offset, struct fuse_file_info *fi)
+{
+	printf("WFS_READDIR()---------\n");
+	char *pathcpy = strdup(path);
+	Path *p = splitPath(pathcpy);
+	if (p == NULL)
+	{
+		printf("wfs_readdir(): path is null\n");
+	}
+	struct wfs_inode *directory = getInodePath(p, 0);
+	if (directory == NULL)
+	{
+		return -ENOENT;
+	}
+
+	if ((directory->mode && S_IFDIR) == 0)
+	{
+		return -EBADF;
+	}
+
+	off_t next_offset = 0;
+	struct wfs_dentry *direntry;
+	int original_offset = offset;
+	while (1)
+	{
+		
+		direntry = findNextDir(directory, offset, &next_offset);
+
+		if (direntry == NULL)
+		{
+			printf("empty dir\n");
+			return 0;
+		}
+		printf("readdir(): direntry->name: %s num: %d\n, next_offset: %ld\n", direntry->name, direntry->num, next_offset);
+		if (filler(buf, direntry->name, NULL, next_offset) != 0)
+		{
+			printf("wfs_readdir(): filler returned nonzero\n");
+			return 0;
+		}
+
+		if (next_offset == 0)
+		{
+			if(original_offset > 0){
+				offset = 0;
+				printf("original offset > 0\n");
+				continue;
+			}
+			printf("wfs_readir(): no more files\n");
+			return 0;
+		}
+		offset = next_offset;
+	}
+	printf("wfs_readdir(): failed somehow\n");
+	return -1;
+}
+
 static int wfs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse_file_info *fi)
 {
 
