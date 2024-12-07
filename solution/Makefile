@@ -25,6 +25,13 @@ redo_disks: mkfs
 	$(MAKE) make_disk
 	./mkfs -r 1 -d disk.img -d disk1.img -i 32 -b 200	
 
+redo_disks_zero: mkfs
+	$(MAKE) remove_disks
+	$(MAKE) make_disk
+	$(MAKE) duplicate_disk
+	$(MAKE) make_disk
+	./mkfs -r 0 -d disk.img -d disk1.img -i 32 -b 200	
+
 duplicate_disk: disk.img
 	mv disk.img disk1.img
 make_disk:
