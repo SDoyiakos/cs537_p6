@@ -524,7 +524,7 @@ static struct wfs_dentry *findNextDir0(struct wfs_inode *directory, off_t start_
 	struct wfs_dentry *current_de = (struct wfs_dentry *)(mappings[disk] + superblocks[disk]->d_blocks_ptr + start_de_offset);
 	struct wfs_dentry *next_de;
 
-	int start_block = de_offset / BLOCK_SIZE;
+	int start_block = start_de_offset / BLOCK_SIZE;
 
 	// if its the first time calling findNextDir, then get the first de in the dir
 	if (start_de_offset == 0)
@@ -610,7 +610,7 @@ static struct wfs_dentry *findNextDir0(struct wfs_inode *directory, off_t start_
 // findNextDir(root, 12, new_off) = b, new_off = offset to c.
 // findNextDir(root, c_ffset, new_off) = c, new_off = 0
 // note that blocks[b] == offset from d_blocks_ptr
-static struct wfs_dentry *findNextDir1(struct wfs_inode *directory, off_t de_offset, off_t *new_de_offset, int disk)
+static struct wfs_dentry *findNextDir1(struct wfs_inode *directory, off_t de_offset, off_t *new_de_offset)
 {
 
 	printf("-------------------findNextDir()--------------\n");
@@ -1169,14 +1169,6 @@ static int wfs_rmdir(const char *path)
 	return 0;
 }
 
-static int wfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi){
-	if(raid_mode == 1){
-		return readdir1(path, buf, offset, fi);
-	} else if (raid_mode == 0){
-		return readdir0(path, buf, offset, fi);
-	}
-
-}
 static int readdir0(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi)
 {
 	printf("=-----------WFS_READDIR0()---------\n");
@@ -1306,6 +1298,14 @@ static int readdir1(const char *path, void *buf, fuse_fill_dir_t filler, off_t o
 	return -1;
 }
 
+static int wfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi){
+	if(raid_mode == 1){
+		return readdir1(path, buf, filler,  offset, fi);
+	} else if (raid_mode == 0){
+		return readdir0(path, buf, filler, offset, fi);
+	}
+	return -1;
+}
 static int read1(const char* path, char* buf, size_t size, off_t offset) {
 	int bytes_read = 0;
 
@@ -1475,21 +1475,13 @@ static int wfs_read(const char *path, char *buf, size_t size, off_t offset, stru
 	printf("wfs_read\n");
 	if(raid_mode == 1 ) {
 		return read1(path, buf, size, offset);
-	}
-}
-
-static int wfs_write(const char *path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fi){
-
-	if(raid_mode == 1){
-		printf("raid1\n");
-		return write_raid1(path, buf, size, offset, fi);
-	}
+	} 
 
 }
 
 static int write_raid0(const char *path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fi){
 	int disk = getNextDisk();
-	int blockindex = offset / BLOCK_SIZE:	
+	int blockindex = offset / BLOCK_SIZE;	
 	//	
 	
 	return 0;
@@ -1646,6 +1638,14 @@ static int write_raid1(const char *path, const char *buf, size_t size, off_t off
 	return written_bytes;
 }
 
+static int wfs_write(const char *path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fi){
+
+	if(raid_mode == 1){
+		printf("raid1\n");
+		return write_raid1(path, buf, size, offset, fi);
+	}
+
+}
 static int wfs_getattr(const char *path, struct stat *stbuf)
 {
 	printf("wfs_getattr\n");
