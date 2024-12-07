@@ -50,5 +50,9 @@ mkfs_sanitize:
 mkfs_valgrind:
 	gcc -Og -ggdb -Wall -Werror -pedantic -std=gnu18 -g -o mkfs_valgrind mkfs.c
 .PHONY: clean
+
+createFile: createFile.c
+	gcc $(CFLAGS) createFile.c -o createFile
+
 clean:
 	rm -rf $(BINS)
