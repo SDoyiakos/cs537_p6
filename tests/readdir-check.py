@@ -11,5 +11,7 @@ if sorted(filelist) == sorted(foundfiles):
     exit(0)
 else:
     print("readdir files don't match expectation")
+    print("filelist: ", filelist);
+    print("found: ", foundfiles);
     exit(1)
     
