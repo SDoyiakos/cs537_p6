@@ -553,7 +553,7 @@ static struct wfs_dentry *findNextDir(struct wfs_inode *directory, off_t de_offs
 		for (o = ((min_offset % BLOCK_SIZE)); o < BLOCK_SIZE;
 			 o += sizeof(struct wfs_dentry))
 		{
-			printf("we here: o: %ld\n", o);
+			printf("we here: o: %d\n", o);
 			next_de = (struct wfs_dentry *)(mappings[0] + superblocks[0]->d_blocks_ptr + directory->blocks[b] +  o);
 
 			if ((next_de->num != 0) && (strcmp(next_de->name, current_de->name) != 0))
@@ -790,7 +790,6 @@ static int wfs_unlink(const char *path)
 	// get the dir and file inode
 	struct wfs_inode *directory;
 	struct wfs_inode *file;
-	char *dir_name;
 	char *file_name;
 	// RAID 1:
 
@@ -815,11 +814,9 @@ static int wfs_unlink(const char *path)
 		if(splitpath->size > 1){
 			splitpath->size--;
 			directory = getInodePath(splitpath, disk);
-			dir_name = splitpath->path_components[splitpath->size - 1];
 		} else {
 			// IF ROOT
 			directory = roots[disk];
-			dir_name = "/";
 		}
 
 		if (directory == NULL)
@@ -840,20 +837,20 @@ static int wfs_unlink(const char *path)
 					continue;
 				}
 				uint block_num = file->blocks[d] / BLOCK_SIZE;
-				printf("freeing datablocks: bnum: %d\n", block_num);
 				void *block = mappings[disk] + superblocks[disk]->d_blocks_ptr + file->blocks[d];
-				printf("addresss of block: 0x%x\n", block);
 				if (memset(block, 0, BLOCK_SIZE) != block)
 				{
 					printf("unlink(): memset failed\n");
+					return -1;
 				}
+		
 				markbitmap_d(block_num, 0, disk);
 			}
 
 			// free the indirect blocks
 			if (file->blocks[IND_BLOCK] != -1)
 			{
-				IndirectBlock *indirect_block = (struct IndirectBlock *)(mappings[disk] + superblocks[disk]->d_blocks_ptr + file->blocks[IND_BLOCK]);
+				IndirectBlock *indirect_block = (IndirectBlock *)(mappings[disk] + superblocks[disk]->d_blocks_ptr + file->blocks[IND_BLOCK]);
 
 				for (int i = 0; i < indirect_block->size; i++)
 				{
