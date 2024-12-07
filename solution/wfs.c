@@ -181,7 +181,7 @@ static struct wfs_inode* allocateInode(int disk) {
 	my_inode->num = data_bit;
 	my_inode->uid = getuid();
 	my_inode->gid = getgid();
-	my_inode->size = sizeof(struct wfs_inode);
+	my_inode->size = 0; 
 	my_inode->nlinks = 0;
 	my_inode->atim = time(0);
 	my_inode->mtim = time(0);
@@ -545,14 +545,15 @@ static int wfs_read(const char* path, char *buf, size_t size, off_t offset, stru
 	data_index = offset / BLOCK_SIZE; // Going into the block which has this data
 	data_ptr = mappings[0] + superblocks[0]->d_blocks_ptr + my_inode->blocks[data_index] + (offset%BLOCK_SIZE);
 	int remaining = BLOCK_SIZE - (offset % BLOCK_SIZE);
-	while(bytes_read < size && *data_ptr != 0) {
+	int offsetcpy = offset;
+	while(bytes_read < size && offsetcpy< my_inode->size) {
 		// Write up to end of block
 		if(remaining > 0) {
 			memcpy(buf + bytes_read, data_ptr, 1);
 			bytes_read++;
 			remaining--;
 			data_ptr++;
-			
+
 		}
 		else if(remaining == 0) {
 			data_index++;
@@ -664,6 +665,8 @@ static int wfs_write(const char* path, const char *buf, size_t size, off_t offse
 			}
 		
 		}
+		my_file->size += written_bytes;
+		
 		
 	}
 
