@@ -617,8 +617,6 @@ void wfs_destroy(void *private_data)
 		print_dbitmap(disk);
 		my_inode = getInode(0, disk);
 		printf("Inode [%d]: num = %d nlinks = %d\n", 0, my_inode->num, my_inode->nlinks);
-		my_inode = getInode(1, disk);
-		printf("Inode [%d]: num = %d nlinks = %d\n", 1, my_inode->num, my_inode->nlinks);
 	}
 }
 
@@ -1015,8 +1013,10 @@ static int wfs_rmdir(const char *path)
 		}
 
 		int block;
-		// Free the entry
-		memset(my_dirent,0, sizeof(struct wfs_dentry));		
+		
+		// Free the entry in the parent dir
+		memset(my_dirent,0, sizeof(struct wfs_dentry));	
+		parent->size-=sizeof(struct wfs_dentry);	
 		for(int i =0; i < N_BLOCKS;i++) {
 			if(my_inode->blocks[i] != -1) {
 				block = my_inode->blocks[i] / BLOCK_SIZE;
