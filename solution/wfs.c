@@ -434,6 +434,7 @@ static int wfs_mkdir(const char* path, mode_t mode) {
 static int wfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 			   off_t offset, struct fuse_file_info *fi)
 {
+	printf("wfs_readdir\n");
 	return 0;
 }
 
@@ -508,8 +509,72 @@ static int wfs_rmdir(const char *path)
 
 static int wfs_read(const char* path, char *buf, size_t size, off_t offset, struct fuse_file_info* fi)
 {
+
 	printf("wfs_read\n");
-	return 1;
+	printf("We want to read %d\n", size);
+	int bytes_read = 0;
+	int remaining_space;
+
+	// Getting path components
+	char* malleable_path = strdup(path);
+	if(malleable_path == NULL) {
+		printf("Couldn't get malleable path in read\n");
+		return -1;
+	}
+	
+	Path* p = splitPath(malleable_path);
+	if(p == NULL) {
+		printf("Couldn't get path struct in read\n");
+		return -1;
+	}
+
+	struct wfs_inode* my_inode = getInodePath(p, 0);
+	if(my_inode == NULL) {
+		printf("Couldnt get inode of file to read\n");
+		return -1;
+	}
+
+	// Check if offset too far out
+	if(offset >= my_inode->size) {
+		printf("Inode size is %d\n", my_inode->size);
+		return 0;
+	}
+
+	int data_index;
+	unsigned char* data_ptr; // Points to the byte of data to be read
+
+
+	data_index = offset / BLOCK_SIZE; // Going into the block which has this data
+	data_ptr = mappings[0] + superblocks[0]->d_blocks_ptr + my_inode->blocks[data_index] + (offset%BLOCK_SIZE);
+	int remaining = BLOCK_SIZE - (offset % BLOCK_SIZE);
+	while(bytes_read < size && *data_ptr != 0) {
+		// Write up to end of block
+		if(remaining > 0) {
+			memcpy(buf + bytes_read, data_ptr, 1);
+			bytes_read++;
+			remaining--;
+			data_ptr++;
+			
+		}
+		else if(remaining == 0) {
+			data_index++;
+			data_ptr = mappings[0] + superblocks[0]->d_blocks_ptr + my_inode->blocks[data_index];
+			remaining = BLOCK_SIZE;
+		}
+		else {
+			printf("Its cooked\n");
+			return -1;
+		}
+	}
+
+	if(*data_ptr == 0) {
+		printf("Exit because of null\n");
+	}
+	else {
+		printf("Exit because of eof\n");
+	}
+	printf("Read %d bytes\n", bytes_read);
+	return bytes_read;
 }
 
 static int wfs_write(const char* path, const char *buf, size_t size, off_t offset, struct fuse_file_info* fi)
@@ -601,9 +666,6 @@ static int wfs_write(const char* path, const char *buf, size_t size, off_t offse
 			}
 		
 		}
-
-		// Free data
-		free(malleable_path);
 		
 	}
 
@@ -624,22 +686,16 @@ static int wfs_getattr(const char* path, struct stat* stbuf)
 	if(malleable_path == NULL) {
 		return -1;
 	}
-	printf("After dup\n");
 	p = splitPath(malleable_path);
-	printf("After split\n");
 	if(p== NULL) {
 		return -1;
-	}
-
-	printf("P->size is %d\n", p->size);
-	for(int i =0; i < p->size;i++) {
-		printf("p[%d] is %s\n", i, p->path_components[i]);
 	}
 	
 	my_inode = getInodePath(p, 0);
 	if(my_inode == NULL) {
 		return -ENOENT;
 	}
+
 	
 	stbuf->st_dev = 0;
 	stbuf->st_ino = my_inode->num;
@@ -653,11 +709,6 @@ static int wfs_getattr(const char* path, struct stat* stbuf)
 	stbuf->st_blocks = my_inode->size / BLOCK_SIZE;
 	printf("wfs_getattr done\n");
 
-
-	for(int i =0;i < p->size;i++) {
-			free(p->path_components[i]);
-	}
-	free(p);
 	return 0;
 }
 
@@ -804,8 +855,10 @@ int my_tests() {
 	
 	Path* p;
 	mknod("hello", S_IFREG, 0);
-	char buffer[] = "Hello";
-	//wfs_write("hello", buffer, 6, 0, NULL);
+	char buffer[] = "Hello world please end me";
+	char buffer_read[strlen(buffer) + 1];
+	wfs_write("hello", buffer, strlen(buffer) + 1, 511, NULL);
+	wfs_read("hello", buffer_read, strlen(buffer_read), 511, NULL);
 	return 0;
 }
 
