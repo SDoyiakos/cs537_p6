@@ -193,7 +193,7 @@ static int allocateBlock(int disk)
 static int initializeIndirectBlock(int disk){
 	// allocate the first block
 	int indirectBlock_offset = allocateBlock(disk);
-	struct IndirectBlock *indirectBlock	= mappings[disk] + superblocks[disk]->d_blocks_ptr + indirectBlock_offset;
+	struct IndirectBlock *indirectBlock	= (struct IndirectBlock *)(mappings[disk] + superblocks[disk]->d_blocks_ptr + indirectBlock_offset);
 	for(int i = 0; i < (BLOCK_SIZE / sizeof(off_t)); i++){
 		indirectBlock->blocks[i] = -1;
 	}
@@ -202,17 +202,6 @@ static int initializeIndirectBlock(int disk){
 }
 
 
-static int allocateBlock_indirect(off_t ib_offset, int disk){
-	struct IndirectBlock *indirectBlock	= mappings[disk] + superblocks[disk]->d_blocks_ptr + ib_offset;
-	for(int i = 0; i < (BLOCK_SIZE / sizeof(off_t)); i++){
-		if(indirectBlock->blocks[i] == -1){
-			if((indirectBlock->blocks[i] = allocateBlock(disk)) == -1){
-				printf("allocateBlock_indirect() not enough space\n");
-				return -1;
-			};
-		};
-	}
-}
 /** allocateInode
  * Finds an open inode and then returns its offset from inode ptr
  **/
@@ -1046,9 +1035,8 @@ static int wfs_read(const char *path, char *buf, size_t size, off_t offset, stru
 {
 
 	printf("wfs_read\n");
-	printf("We want to read %d\n", size);
+	printf("We want to read %ld\n", size);
 	int bytes_read = 0;
-	int remaining_space;
 
 	// Getting path components
 	char* malleable_path = strdup(path);
@@ -1071,7 +1059,7 @@ static int wfs_read(const char *path, char *buf, size_t size, off_t offset, stru
 
 	// Check if offset too far out
 	if(offset >= my_inode->size) {
-		printf("Inode size is %d\n", my_inode->size);
+		printf("Inode size is %ld\n", my_inode->size);
 		return 0;
 	}
 
@@ -1084,7 +1072,7 @@ static int wfs_read(const char *path, char *buf, size_t size, off_t offset, stru
 	int remaining = BLOCK_SIZE - (offset % BLOCK_SIZE);
 	int offsetcpy = offset;
 	printf("Before offset cpy is %d\n", offsetcpy);
-	printf("Size is %d\n", my_inode->size);
+	printf("Size is %ld\n", my_inode->size);
 	while(bytes_read < size && offsetcpy < my_inode->size) {
 		// Write up to end of block
 		if(remaining > 0) {
@@ -1157,57 +1145,68 @@ static int wfs_write(const char *path, const char *buf, size_t size, off_t offse
 		curr_block_index = offset / BLOCK_SIZE;
 		curr_block_offset = my_file->blocks[curr_block_index];
 
+		int indirect_block_index = -1;
+		struct IndirectBlock * idirblock = NULL; 
+
 		if (curr_block_offset == -1)
 		{															 // If block not allocated
 			//CHECK IF AN INDIRECT BLOCK
 			if(curr_block_index == IND_BLOCK){
 
 				my_file->blocks[curr_block_index] = initializeIndirectBlock( disk);	
+				idirblock = (struct IndirectBlock *)(mappings[disk] + superblocks[disk]->d_blocks_ptr + my_file->blocks[curr_block_index]);
+				idirblock->blocks[0] = allocateBlock(disk);
+				curr_block_offset = idirblock->blocks[0];
+				indirect_block_index = 0;
 
 			} else {
 
 				my_file->blocks[curr_block_index] = allocateBlock(disk); // try to allocate it
 				curr_block_offset = my_file->blocks[curr_block_index];
-				if (my_file->blocks[curr_block_index] == -1)
+			}
+				if (curr_block_offset== -1)
 				{ // If still not allocated then exit on error of no space
 					printf("Cant allocate more file for write\n");
 					return -ENOSPC;
 				}			
-			}
+
+			
 		}
 
 		curr_block_ptr = mappings[disk] + superblocks[disk]->d_blocks_ptr + curr_block_offset + (offset%512);
 		printf("Write to addr is %p, which is in index %d\n", curr_block_ptr, curr_block_index);
 		remaining_space = 512-(offset % 512);
-		struct IndirectBlock * idirblock = NULL; 
 		while(written_bytes != size) {
 
 			// INDIRECT MOD
-			if(curr_block_index == IND_BLOCK){
 
-
-			}
 			// Ensuring block is allocated
 			if (curr_block_offset == -1)
 			{
 				if(curr_block_index == IND_BLOCK){
 
 					my_file->blocks[curr_block_index] = initializeIndirectBlock( disk);	
-					idirblock = mappings[disk] + superblocks->d_blocks_ptr + my_file->blocks[curr_block_index];
-					
+					idirblock = (struct IndirectBlock *)(mappings[disk] + superblocks[disk]->d_blocks_ptr + my_file->blocks[curr_block_index]);
+					idirblock->blocks[0] = allocateBlock(disk);
+					curr_block_offset = idirblock->blocks[0];
+					indirect_block_index = 0;
 
+				} else if (indirect_block_index >= 0){
+					idirblock->blocks[indirect_block_index] = allocateBlock(disk);	
+					curr_block_offset = idirblock->blocks[indirect_block_index];
 				} else {
 					my_file->blocks[curr_block_index] = allocateBlock(disk);
+					curr_block_offset = my_file->blocks[curr_block_index];
+				}
 
-					if (my_file->blocks[curr_block_index] == -1)
-					{ // If still not allocated then exit on error of no space
-						printf("Cant allocate more file for write\n");
-						return -ENOSPC;
-					}
-				curr_block_offset = my_file->blocks[curr_block_index];
+				if (curr_block_offset == -1)
+				{ // If still not allocated then exit on error of no space
+					printf("Cant allocate more file for write\n");
+					return -ENOSPC;
+				}
 				curr_block_ptr = mappings[disk] + superblocks[disk]->d_blocks_ptr + curr_block_offset;
 			}
-			}
+
 
 			// Check if we need to write larger than block space
 			if (size - written_bytes >= remaining_space)
@@ -1216,11 +1215,17 @@ static int wfs_write(const char *path, const char *buf, size_t size, off_t offse
 				written_bytes += remaining_space;							  // Update how many bytes we have written
 
 				// Go to next block
-				curr_block_index++;
-				curr_block_offset = my_file->blocks[curr_block_index];
+				if(indirect_block_index >= 0){
+					indirect_block_index++;
+					curr_block_offset = idirblock->blocks[indirect_block_index];
+				} else {
+					curr_block_index++;
+					curr_block_offset = my_file->blocks[curr_block_index];
+				}
 				curr_block_ptr = mappings[disk] + superblocks[disk]->d_blocks_ptr + curr_block_offset;
 				remaining_space = BLOCK_SIZE;
 			}
+
 
 			// Write is less than remaining space in block
 			else if (size - written_bytes < remaining_space)
@@ -1234,9 +1239,9 @@ static int wfs_write(const char *path, const char *buf, size_t size, off_t offse
 				return -1;
 			}	
 		}
-		printf("Before File size is %d\n", my_file->size);	
+		printf("Before File size is %ld\n", my_file->size);	
 		my_file->size += written_bytes;
-		printf("After File size is %d\n", my_file->size);	
+		printf("After File size is %ld\n", my_file->size);	
 	}
 	
 	printf("Written bytes is %d\n", written_bytes);
