@@ -649,7 +649,6 @@ int mapDisks(int argc, char *argv[])
 		printf("argv[%d]: %s\n", i, argv[i]);
 		disks = realloc(disks, sizeof(int) * numdisks);
 		int fd = open(argv[i], O_RDWR);
-
 		if (fd == -1)
 		{
 			printf("mapDisks(): failed to open file\n");
@@ -694,22 +693,40 @@ int mapDisks(int argc, char *argv[])
 
 	// Map every disk into memory
 	struct stat my_stat;
+	int disk_order;
+	struct wfs_sb disk_superblock;
+
 	for (int k = 0; k < numdisks; k++)
 	{
+		read(disks[k], &disk_superblock, sizeof(struct wfs_sb));
+		disk_order = disk_superblock.disk_order -1; // We start at order 1 so subtract 1
 		fstat(disks[k], &my_stat);																	// Get file information about disk image
-		mappings[k] = mmap(NULL, my_stat.st_size, PROT_READ | PROT_WRITE, MAP_SHARED, disks[k], 0); // Map this image into mem
-		disk_size[k] = my_stat.st_size;
+		mappings[disk_order] = mmap(NULL, my_stat.st_size, PROT_READ | PROT_WRITE, MAP_SHARED, disks[k], 0); // Map this image into mem
+		disk_size[disk_order] = my_stat.st_size;
 		// Check if mmap worked
-		if (mappings[k] == MAP_FAILED)
+		if (mappings[disk_order] == MAP_FAILED)
 		{
 			printf("Error, couldn't mmap disk into memory\n");
 			exit(1);
 		}
 
 		// Set superblock and root according to offsets
-		superblocks[k] = (struct wfs_sb *)mappings[k];
-		roots[k] = (struct wfs_inode *)((char *)superblocks[k] + superblocks[k]->i_blocks_ptr);
+		superblocks[disk_order] = (struct wfs_sb *)mappings[disk_order];
+		roots[disk_order] = (struct wfs_inode *)((char *)superblocks[disk_order] + superblocks[disk_order]->i_blocks_ptr);
 	}
+
+	// Check disk order
+	for(int j =0;j<numdisks;j++) {
+		if(superblocks[j]->total_disks != numdisks) {
+			printf("Discrepancy between total disk count and superblock value\n");
+			exit(-1);
+		}
+		if(superblocks[j]->disk_order != j+1) {
+			printf("Error disks out of order, order %d, expected %d\n", superblocks[j]->disk_order, j+1);
+			//exit(-1);
+		}
+	}
+	
 	printf("end mapdisks\n");
 	return i;
 }
