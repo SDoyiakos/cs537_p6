@@ -419,6 +419,7 @@ static struct wfs_dentry *findOpenDir0(struct wfs_inode *parent, int disk)
 			disk = getNextDisk(); // We're going to write to a new disk
 			parent->blocks[i] = allocateBlock(disk); // Allocate a block on the new disk
 			curr_entry = (struct wfs_dentry*)((char*)mappings[disk] + superblocks[disk]->d_blocks_ptr + getEntryOffset(parent->blocks[i]));
+			printf("Allocated block on disk %d\n", disk);
 			return curr_entry;
 		}
 	}
@@ -613,6 +614,31 @@ static struct wfs_dentry *searchDir(struct wfs_inode *dir, char *entry_name, int
 static struct wfs_inode *getInodePath1(Path *path, int disk)
 {
 	printf("getInodePath path: \n"); 
+	struct wfs_inode *current_inode;
+	char *curr_entry_name;
+	struct wfs_dentry *curr_entry_dirent;
+	current_inode = roots[disk]; // Get root inode 
+	for (int i = 0; i < path->size; i++)
+	{
+		curr_entry_name = path->path_components[i]; // Get next child name
+		curr_entry_dirent = searchDir(current_inode, curr_entry_name, disk);
+		// Check if entry found
+		if (curr_entry_dirent == NULL)
+		{
+			printf("Couldn't find entry %s\n", curr_entry_name);
+			return NULL;
+		}
+		current_inode = getInode(curr_entry_dirent->num, disk);
+	}
+
+	return current_inode;
+}
+/** getInode
+ * Returns the inode at the end of the path
+ **/
+static struct wfs_inode *getInodePath0(Path *path, int disk)
+{
+	printf("getInodePath0\n"); 
 	struct wfs_inode *current_inode;
 	char *curr_entry_name;
 	struct wfs_dentry *curr_entry_dirent;
@@ -886,14 +912,89 @@ int mapDisks(int argc, char *argv[])
 			//exit(-1);
 		}
 	}
-	
+	raid_mode = superblocks[0]->raid_mode;
 	printf("end mapdisks\n");
 	return i;
 }
 
 //----------------------CALLBACL FCNS----------------------
 
-static int wfs_mkdir(const char *path, mode_t mode)
+
+static int wfs_mkdir0(const char *path, mode_t mode)
+{
+		printf("wfs_mkdir\n");
+		char *malleable_path;
+		Path *p;
+		char *dir_name;
+		struct wfs_inode *parent;
+		struct wfs_inode *child;
+
+		// Making path modifiable
+		malleable_path = strdup(path);
+		if (malleable_path == NULL)
+		{
+			return -1;
+		}
+
+		p = splitPath(malleable_path); // Break apart path
+
+		for (int i = 0; i < p->size; i++)
+		{
+			printf("Path component [%d]: %s\n", i, p->path_components[i]);
+		}
+
+		// Checking if this file already exists
+		if (getInodePath(p, 0) != NULL)
+		{
+			printf("File already exists\n");
+			return -EEXIST;
+		}
+
+		// Strip last element but save name
+		dir_name = p->path_components[p->size - 1];
+		p->size--;
+
+		parent = getInodePath(p, 0);
+		if (parent == NULL)
+		{
+			printf("Error getting parent\n");
+		}
+
+		child = allocateInode(0);
+		if (child == NULL)
+		{
+			printf("Error allocating child\n");
+			return -ENOSPC;
+		}
+
+		child->mode |= mode;
+		child->mode |= S_IFDIR;
+
+		if (linkdir(parent, child, dir_name, 0) == -1)
+		{
+			printf("Linking error\n");
+		}
+
+		struct wfs_inode* first; 
+		struct wfs_inode* second;
+		for(int k = 0; k < numdisks;k++) {
+		first = (struct wfs_inode*)(mappings[0] + superblocks[0]->i_blocks_ptr);
+		second = (struct wfs_inode*)(mappings[k] + superblocks[k]->i_blocks_ptr);
+		for(int i = 0; i < superblocks[0]->num_inodes;i++){
+			memcpy(second, first, sizeof(struct wfs_inode));
+			first++;
+			second++;
+		}
+
+		// Copying inode bitmaps
+		memcpy(superblocks[k], superblocks[0], superblocks[0]->d_bitmap_ptr);
+		
+	}
+	
+	return 0;
+}
+
+static int wfs_mkdir1(const char *path, mode_t mode)
 {
 	for (int disk = 0; disk < numdisks; disk++)
 	{
@@ -951,6 +1052,17 @@ static int wfs_mkdir(const char *path, mode_t mode)
 		}
 	}
 	return 0;
+}
+
+static int wfs_mkdir(const char *path, mode_t mode)
+{
+	if(raid_mode == 0) {
+		return wfs_mkdir0(path, mode);
+	}
+	else if(raid_mode == 1) {
+		return wfs_mkdir1(path, mode);
+	}
+	return -1;
 }
 // Remove (delete) the given file, symbolic link, hard link, or special node.
 //  Note that if you support hard links, unlink only deletes the data when the last hard link is removed.
@@ -1662,7 +1774,6 @@ int main(int argc, char *argv[])
 	int new_argc; // Used to pass into fuse_main
 
 	// TODO: INITIALIZE Raid_mode
-	raid_mode = 1;
 	mapDisks(argc, argv);
 
 	new_argc = (argc - numdisks); // Gets difference of what was already read vs what isnt
