@@ -32,6 +32,7 @@ static unsigned char **mappings;
 static int numdisks = 0;
 static struct wfs_sb **superblocks;
 static struct wfs_inode **roots;
+static int next_disk = 0;
 
 struct PathListNode
 {
@@ -51,6 +52,23 @@ struct IndirectBlock
 };
 
 // ------------HELPTER FUNCINTS-----------------
+static int getEntryOffset(int entry) {
+	int ret_val = entry;
+	entry = entry % BLOCK_SIZE;
+	ret_val-= entry;
+	return ret_val;
+}
+
+static int getEntryDisk(int entry) {
+	int ret_val = entry % BLOCK_SIZE;
+	return ret_val;
+}
+
+static int getNextDisk() {
+	int ret_val = next_disk;
+	next_disk= (next_disk + 1) % numdisks;
+	return ret_val;
+}
 static int checkDBitmap(unsigned int inum, int disk)
 {
 	int byte_dist = inum / 8;		 // how many byes away from start inum is
@@ -1125,10 +1143,7 @@ static int wfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	return -1;
 }
 
-static int wfs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse_file_info *fi)
-{
-
-	printf("wfs_read\n");
+static int read1(const char* path, char* buf, size_t size, off_t offset) {
 	int bytes_read = 0;
 
 	// Getting path components
@@ -1208,6 +1223,96 @@ static int wfs_read(const char *path, char *buf, size_t size, off_t offset, stru
 		printf("Exit because of eof\n");
 	}
 	return bytes_read;
+}
+
+static int read0(const char* path, char* buf, size_t size, off_t offset) {
+	int bytes_read = 0;
+	int disk;
+	// Getting path components
+	char* malleable_path = strdup(path);
+	if(malleable_path == NULL) {
+		printf("Couldn't get malleable path in read\n");
+		return -1;
+	}
+	
+	Path* p = splitPath(malleable_path);
+	if(p == NULL) {
+		printf("Couldn't get path struct in read\n");
+		return -1;
+	}
+
+	struct wfs_inode* my_inode = getInodePath(p, disk);
+	if(my_inode == NULL) {
+		printf("Couldnt get inode of file to read\n");
+		return -1;
+	}
+
+	// Check if offset too far out
+	if(offset >= my_inode->size) {
+		printf("Inode size is %ld\n", my_inode->size);
+		return 0;
+	}
+
+	int data_index;
+	unsigned char* data_ptr; // Points to the byte of data to be read
+
+	//INDIRECT EXTENSION
+	int indirect_block_index = -1;
+	struct IndirectBlock * indirblock = NULL;
+
+	data_index = offset / BLOCK_SIZE; // Going into the block which has this data
+	if(data_index >= IND_BLOCK){
+		indirect_block_index = data_index - D_BLOCK;
+		indirblock =(struct IndirectBlock *)( mappings[disk] + superblocks[disk]->d_blocks_ptr + my_inode->blocks[IND_BLOCK]);
+		data_ptr = mappings[disk] + superblocks[disk]->d_blocks_ptr + indirblock->blocks[indirect_block_index];
+	} else {
+		data_ptr = mappings[disk] + superblocks[disk]->d_blocks_ptr + my_inode->blocks[data_index] + (offset%BLOCK_SIZE);
+	}
+
+	int remaining = BLOCK_SIZE - (offset % BLOCK_SIZE);
+	int offsetcpy = offset;
+	while(bytes_read < size && offsetcpy < my_inode->size) {
+		// Write up to end of block
+		if(remaining > 0) {
+			memcpy(buf + bytes_read, data_ptr, 1);
+			bytes_read++;
+			remaining--;
+			data_ptr++;
+			offsetcpy++;
+
+		}
+		else if(remaining == 0) {
+			data_index++;
+			if(data_index >= IND_BLOCK){
+				indirect_block_index++;
+				indirblock =(struct IndirectBlock *)( mappings[disk] + superblocks[disk]->d_blocks_ptr + my_inode->blocks[IND_BLOCK]);
+				data_ptr = mappings[disk] + superblocks[disk]->d_blocks_ptr + indirblock->blocks[indirect_block_index];
+			} else {
+				data_ptr = mappings[disk] + superblocks[disk]->d_blocks_ptr + my_inode->blocks[data_index];
+			}
+			remaining = BLOCK_SIZE;
+		}
+		else {
+			printf("Its cooked\n");
+			return -1;
+		}
+	}
+
+	if(*data_ptr == 0) {
+		printf("Exit because of null\n");
+	}
+	else {
+		printf("Exit because of eof\n");
+	}
+	return bytes_read;	
+}
+
+static int wfs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse_file_info *fi)
+{
+	printf("wfs_read\n");
+	if(raid_mode == 1 ) {
+		return read1(path, buf, size, offset);
+	}
 }
 
 static int wfs_write(const char *path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fi)
