@@ -546,13 +546,16 @@ static int wfs_read(const char* path, char *buf, size_t size, off_t offset, stru
 	data_ptr = mappings[0] + superblocks[0]->d_blocks_ptr + my_inode->blocks[data_index] + (offset%BLOCK_SIZE);
 	int remaining = BLOCK_SIZE - (offset % BLOCK_SIZE);
 	int offsetcpy = offset;
-	while(bytes_read < size && offsetcpy< my_inode->size) {
+	printf("Before offset cpy is %d\n", offsetcpy);
+	printf("Size is %d\n", my_inode->size);
+	while(bytes_read < size && offsetcpy < my_inode->size) {
 		// Write up to end of block
 		if(remaining > 0) {
 			memcpy(buf + bytes_read, data_ptr, 1);
 			bytes_read++;
 			remaining--;
 			data_ptr++;
+			offsetcpy++;
 
 		}
 		else if(remaining == 0) {
@@ -573,6 +576,7 @@ static int wfs_read(const char* path, char *buf, size_t size, off_t offset, stru
 		printf("Exit because of eof\n");
 	}
 	printf("Read %d bytes\n", bytes_read);
+	printf("After offset cpy is %d\n", offsetcpy);
 	return bytes_read;
 }
 
@@ -620,7 +624,6 @@ static int wfs_write(const char* path, const char *buf, size_t size, off_t offse
 				printf("Cant allocate more file for write\n");
 				return -ENOSPC;
 			}
-			my_file->size+=BLOCK_SIZE;
 			
 		}
 		curr_block_ptr = mappings[disk] + superblocks[disk]->d_blocks_ptr + curr_block_offset + (offset%512);
@@ -638,7 +641,6 @@ static int wfs_write(const char* path, const char *buf, size_t size, off_t offse
 				}
 				curr_block_offset = my_file->blocks[curr_block_index];
 				curr_block_ptr = mappings[disk] + superblocks[disk]->d_blocks_ptr + curr_block_offset;
-				my_file->size+=BLOCK_SIZE;
 			}
 			
 			// Check if we need to write larger than block space
@@ -665,11 +667,11 @@ static int wfs_write(const char* path, const char *buf, size_t size, off_t offse
 			}
 		
 		}
+		printf("Before File size is %d\n", my_file->size);	
 		my_file->size += written_bytes;
-		
-		
+		printf("After File size is %d\n", my_file->size);	
 	}
-
+	
 	printf("Written bytes is %d\n", written_bytes);
 	return written_bytes;
 }
