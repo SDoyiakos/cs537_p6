@@ -202,6 +202,9 @@ static int allocateBlock(int disk)
 	memset((unsigned char *)mappings[disk] + superblocks[disk]->d_blocks_ptr + ret_val, 0, BLOCK_SIZE);
 
 	markbitmap_d(data_bit, 1, disk); // Mark this as allocated
+	if(raid_mode == 0) {
+		ret_val +=disk;
+	}
 	return ret_val;					 // Returns first entry within block
 }
 
@@ -325,11 +328,10 @@ static struct wfs_inode *getInode(int inum, int disk)
 	}
 	return (struct wfs_inode *)((char *)mappings[disk] + superblocks[disk]->i_blocks_ptr + (BLOCK_SIZE * inum));
 }
-
 /** findOpenDir
  * Finds an open directory in the parent directory
  **/
-static struct wfs_dentry *findOpenDir(struct wfs_inode *parent, int disk)
+static struct wfs_dentry *findOpenDir1(struct wfs_inode *parent, int disk)
 {
 	if ((parent->mode & S_IFDIR) == 0)
 	{ // Check if dir is a dir
@@ -371,6 +373,72 @@ static struct wfs_dentry *findOpenDir(struct wfs_inode *parent, int disk)
 		}
 	}
 	printf("Couldn't find space for dir nor could space be allocated\n");
+	return NULL;
+}
+
+/** findOpenDir
+ * Finds an open directory in the parent directory
+ **/
+static struct wfs_dentry *findOpenDir0(struct wfs_inode *parent, int disk)
+{
+	if ((parent->mode & S_IFDIR) == 0)
+	{ // Check if dir is a dir
+		printf("Not a directory passed as dir at inode %d with mode %d\n", parent->num, parent->mode & S_IFDIR);
+		return NULL;
+	}
+	if (disk >= numdisks)
+	{ // Check if this is a valid disk
+		printf("Not a valid disk\n");
+		return NULL;
+	}
+	struct wfs_dentry *curr_entry;
+
+	// Checking for open spot in already allocated blocks
+	for (int i = 0; i < N_BLOCKS; i++)
+	{
+		if (parent->blocks[i] != -1)
+		{
+			for (int j = 0; j < BLOCK_SIZE; j += sizeof(struct wfs_dentry))
+			{	
+				disk = getEntryDisk(parent->blocks[i]);
+				curr_entry = (struct wfs_dentry *)((char *)mappings[disk] + superblocks[disk]->d_blocks_ptr + getEntryOffset(parent->blocks[i]) + j);
+				if (curr_entry->num == 0)
+				{
+					return curr_entry;
+				}
+			}
+		}
+	}
+
+	// Allocating a new block
+	printf("Allocating new blcok for node %d\n", parent->num);
+	for (int i = 0; i < N_BLOCKS; i++)
+	{
+		if (parent->blocks[i] == -1)
+		{
+			disk = getNextDisk(); // We're going to write to a new disk
+			parent->blocks[i] = allocateBlock(disk); // Allocate a block on the new disk
+			curr_entry = (struct wfs_dentry*)((char*)mappings[disk] + superblocks[disk]->d_blocks_ptr + getEntryOffset(parent->blocks[i]));
+			return curr_entry;
+		}
+	}
+	printf("Couldn't find space for dir nor could space be allocated\n");
+	return NULL;
+}
+
+/** findOpenDir
+ * Finds an open directory in the parent directory
+ **/
+static struct wfs_dentry *findOpenDir(struct wfs_inode *parent, int disk)
+{
+	if(raid_mode == 0) {
+		printf("Find open dir 0\n");
+		return findOpenDir0(parent, disk);
+	}
+	else if(raid_mode == 1) {
+		printf("Find open dir 1\n");
+		return findOpenDir1(parent, disk);
+	}
 	return NULL;
 }
 
@@ -453,7 +521,44 @@ static int deleteDentry(struct wfs_inode *dir, char *entry_name, int disk)
 /** searchDir
  * Returns the directory entry corresponding to the entry_name in the dir directory
  **/
-static struct wfs_dentry *searchDir(struct wfs_inode *dir, char *entry_name, int disk)
+static struct wfs_dentry *searchDir0(struct wfs_inode *dir, char *entry_name, int disk)
+{
+	if ((dir->mode & S_IFDIR) == 0)
+	{ // Check if dir is a dir
+		printf("Searching in not a directory %d\n", dir->num);
+		return NULL;
+	}
+	if (disk >= numdisks)
+	{ // Check if this is a valid disk
+		printf("Not a valid disk\n");
+		return NULL;
+	}
+
+	struct wfs_dentry *curr_entry;
+
+	for (int i = 0; i < N_BLOCKS; i++)
+	{ // Iterate over blocks
+		if (dir->blocks[i] != -1)
+		{ // Check if block is used
+			for (int j = 0; j < BLOCK_SIZE; j += sizeof(struct wfs_dentry))
+			{
+				// Go to data block offset and then add offset into block and then dirents
+				disk = getEntryDisk(dir->blocks[i]);
+				curr_entry = (struct wfs_dentry *)((char *)mappings[disk] + superblocks[disk]->d_blocks_ptr + getEntryOffset(dir->blocks[i]) + j);
+				if (curr_entry->name != 0 && strcmp(curr_entry->name, entry_name) == 0)
+				{ // If matching entry
+					return curr_entry;
+				}
+			}
+		}
+	}
+	printf("No entry found for %s in directory of inode %d\n", entry_name, dir->num);
+	return NULL;
+}
+/** searchDir
+ * Returns the directory entry corresponding to the entry_name in the dir directory
+ **/
+static struct wfs_dentry *searchDir1(struct wfs_inode *dir, char *entry_name, int disk)
 {
 	if ((dir->mode & S_IFDIR) == 0)
 	{ // Check if dir is a dir
@@ -487,16 +592,31 @@ static struct wfs_dentry *searchDir(struct wfs_inode *dir, char *entry_name, int
 	return NULL;
 }
 
+
+/** searchDir
+ * Returns the directory entry corresponding to the entry_name in the dir directory
+ **/
+static struct wfs_dentry *searchDir(struct wfs_inode *dir, char *entry_name, int disk)
+{
+	if(raid_mode == 1) {
+		return searchDir1(dir, entry_name, disk);
+	}
+	else if(raid_mode == 0) {
+		return searchDir0(dir, entry_name, disk);
+	}
+	return NULL;
+}
+
 /** getInode
  * Returns the inode at the end of the path
  **/
-static struct wfs_inode *getInodePath(Path *path, int disk)
+static struct wfs_inode *getInodePath1(Path *path, int disk)
 {
 	printf("getInodePath path: \n"); 
 	struct wfs_inode *current_inode;
 	char *curr_entry_name;
 	struct wfs_dentry *curr_entry_dirent;
-	current_inode = roots[disk]; // Get root inode
+	current_inode = roots[disk]; // Get root inode 
 	for (int i = 0; i < path->size; i++)
 	{
 		curr_entry_name = path->path_components[i]; // Get next child name
@@ -511,6 +631,14 @@ static struct wfs_inode *getInodePath(Path *path, int disk)
 	}
 
 	return current_inode;
+}
+
+/** getInode
+ * Returns the inode at the end of the path
+ **/
+static struct wfs_inode *getInodePath(Path *path, int disk)
+{
+	return getInodePath1(path, disk);
 }
 
 // finds the dentry at the de_offset, then finds the offset to the next direntry. Returns
@@ -1227,7 +1355,7 @@ static int read1(const char* path, char* buf, size_t size, off_t offset) {
 
 static int read0(const char* path, char* buf, size_t size, off_t offset) {
 	int bytes_read = 0;
-	int disk;
+	int disk = 0;
 	// Getting path components
 	char* malleable_path = strdup(path);
 	if(malleable_path == NULL) {
@@ -1261,12 +1389,17 @@ static int read0(const char* path, char* buf, size_t size, off_t offset) {
 	struct IndirectBlock * indirblock = NULL;
 
 	data_index = offset / BLOCK_SIZE; // Going into the block which has this data
+
+	// !TODO HANDLE INDIRECT
 	if(data_index >= IND_BLOCK){
 		indirect_block_index = data_index - D_BLOCK;
 		indirblock =(struct IndirectBlock *)( mappings[disk] + superblocks[disk]->d_blocks_ptr + my_inode->blocks[IND_BLOCK]);
 		data_ptr = mappings[disk] + superblocks[disk]->d_blocks_ptr + indirblock->blocks[indirect_block_index];
 	} else {
-		data_ptr = mappings[disk] + superblocks[disk]->d_blocks_ptr + my_inode->blocks[data_index] + (offset%BLOCK_SIZE);
+
+		// Getting entry at disk and offset
+		disk = getEntryDisk(my_inode->blocks[data_index]);
+		data_ptr = mappings[disk] + superblocks[disk]->d_blocks_ptr + getEntryOffset(my_inode->blocks[data_index]) + (offset%BLOCK_SIZE);
 	}
 
 	int remaining = BLOCK_SIZE - (offset % BLOCK_SIZE);
@@ -1283,12 +1416,15 @@ static int read0(const char* path, char* buf, size_t size, off_t offset) {
 		}
 		else if(remaining == 0) {
 			data_index++;
+
+			// !TODO HANDLE INDIRECT
 			if(data_index >= IND_BLOCK){
 				indirect_block_index++;
 				indirblock =(struct IndirectBlock *)( mappings[disk] + superblocks[disk]->d_blocks_ptr + my_inode->blocks[IND_BLOCK]);
 				data_ptr = mappings[disk] + superblocks[disk]->d_blocks_ptr + indirblock->blocks[indirect_block_index];
 			} else {
-				data_ptr = mappings[disk] + superblocks[disk]->d_blocks_ptr + my_inode->blocks[data_index];
+				disk = getEntryDisk(my_inode->blocks[data_index]);
+				data_ptr = mappings[disk] + superblocks[disk]->d_blocks_ptr + getEntryOffset(my_inode->blocks[data_index]);
 			}
 			remaining = BLOCK_SIZE;
 		}
@@ -1313,6 +1449,7 @@ static int wfs_read(const char *path, char *buf, size_t size, off_t offset, stru
 	if(raid_mode == 1 ) {
 		return read1(path, buf, size, offset);
 	}
+	return -1;
 }
 
 static int wfs_write(const char *path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fi)
