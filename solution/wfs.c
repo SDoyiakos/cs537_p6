@@ -48,7 +48,6 @@ typedef struct
 struct IndirectBlock
 {
 	off_t blocks[BLOCK_SIZE / sizeof(off_t)];
-	int size;
 };
 
 // ------------HELPTER FUNCINTS-----------------
@@ -475,6 +474,7 @@ static struct wfs_dentry *searchDir(struct wfs_inode *dir, char *entry_name, int
  **/
 static struct wfs_inode *getInodePath(Path *path, int disk)
 {
+	printf("getInodePath path: \n"); 
 	struct wfs_inode *current_inode;
 	char *curr_entry_name;
 	struct wfs_dentry *curr_entry_dirent;
@@ -880,7 +880,7 @@ static int wfs_unlink(const char *path)
 			{
 				struct IndirectBlock *indirect_block = (struct IndirectBlock *)(mappings[disk] + superblocks[disk]->d_blocks_ptr + file->blocks[IND_BLOCK]);
 
-				for (int i = 0; i < indirect_block->size; i++)
+				for (int i = 0; i < BLOCK_SIZE/sizeof(off_t); i++)
 				{
 					int block_num = indirect_block->blocks[i] / BLOCK_SIZE;
 					void *block = mappings[disk] + superblocks[disk]->d_blocks_ptr + indirect_block->blocks[i];
@@ -1212,11 +1212,12 @@ static int wfs_read(const char *path, char *buf, size_t size, off_t offset, stru
 
 static int wfs_write(const char *path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fi)
 {
+	
 	int written_bytes = 0;
 	for(int disk =0; disk < numdisks;disk++) {
 		
 	
-		printf("wfs_write()\n");
+		printf("wfs_write() path: %s size: %ld offset: %ld\n", path, size, offset);
 		written_bytes = 0;
 		Path* p;
 		char* malleable_path;
@@ -1241,31 +1242,47 @@ static int wfs_write(const char *path, const char *buf, size_t size, off_t offse
 		}
 
 		my_file = getInodePath(p, disk);
+		printf("my_file->num: %d\n", my_file->num);
 		if (my_file == NULL)
 		{
 			printf("File does not exist\n");
 			return -ENOENT;
 		}
 
-		curr_block_index = offset / BLOCK_SIZE;
-		curr_block_offset = my_file->blocks[curr_block_index];
-
+		// indirect block stuff
 		int indirect_block_index = -1;
-		struct IndirectBlock * idirblock = NULL; 
+		struct IndirectBlock * idirblock =(struct IndirectBlock *)( mappings[disk] +
+			 superblocks[disk]->d_blocks_ptr + my_file->blocks[IND_BLOCK]); 
+
+		curr_block_index = offset / BLOCK_SIZE;
+
+		if(curr_block_index >= IND_BLOCK){
+			indirect_block_index = curr_block_index - IND_BLOCK;
+			curr_block_offset = idirblock->blocks[indirect_block_index]; 
+
+		} else {
+			curr_block_offset = my_file->blocks[curr_block_index];
+		}
 
 		if (curr_block_offset == -1)
 		{															 // If block not allocated
+			printf("allocating first block\n");
 			//CHECK IF AN INDIRECT BLOCK
 			if(curr_block_index == IND_BLOCK){
-
+				//allocate indirect block 
 				my_file->blocks[curr_block_index] = initializeIndirectBlock( disk);	
-				idirblock = (struct IndirectBlock *)(mappings[disk] + superblocks[disk]->d_blocks_ptr + my_file->blocks[curr_block_index]);
+
 				idirblock->blocks[0] = allocateBlock(disk);
 				curr_block_offset = idirblock->blocks[0];
 				indirect_block_index = 0;
+				printf("offset: allocating first indirectblock\n");
 
-			} else {
-
+			} else if (indirect_block_index >= 0){
+				//allocate block in indirect block
+				idirblock->blocks[indirect_block_index] = allocateBlock(disk);
+				curr_block_offset = idirblock->blocks[indirect_block_index];
+			} else  {
+				printf("offset: allocating first directblock\n");
 				my_file->blocks[curr_block_index] = allocateBlock(disk); // try to allocate it
 				curr_block_offset = my_file->blocks[curr_block_index];
 			}
@@ -1274,8 +1291,6 @@ static int wfs_write(const char *path, const char *buf, size_t size, off_t offse
 					printf("Cant allocate more file for write\n");
 					return -ENOSPC;
 				}			
-
-			
 		}
 
 		curr_block_ptr = mappings[disk] + superblocks[disk]->d_blocks_ptr + curr_block_offset + (offset%512);
@@ -1288,17 +1303,21 @@ static int wfs_write(const char *path, const char *buf, size_t size, off_t offse
 			if (curr_block_offset == -1)
 			{
 				if(curr_block_index == IND_BLOCK){
-
+					printf("allocating first indireect block\n");
 					my_file->blocks[curr_block_index] = initializeIndirectBlock( disk);	
-					idirblock = (struct IndirectBlock *)(mappings[disk] + superblocks[disk]->d_blocks_ptr + my_file->blocks[curr_block_index]);
+					idirblock = (struct IndirectBlock *)(mappings[disk]
+					 + superblocks[disk]->d_blocks_ptr + my_file->blocks[curr_block_index]);
+
 					idirblock->blocks[0] = allocateBlock(disk);
 					curr_block_offset = idirblock->blocks[0];
 					indirect_block_index = 0;
 
 				} else if (indirect_block_index >= 0){
+					printf("allocting another indireect block\n");
 					idirblock->blocks[indirect_block_index] = allocateBlock(disk);	
 					curr_block_offset = idirblock->blocks[indirect_block_index];
 				} else {
+					printf("alllocating another datablock\n");
 					my_file->blocks[curr_block_index] = allocateBlock(disk);
 					curr_block_offset = my_file->blocks[curr_block_index];
 				}
@@ -1320,9 +1339,12 @@ static int wfs_write(const char *path, const char *buf, size_t size, off_t offse
 
 				// Go to next block
 				if(indirect_block_index >= 0){
+					printf("gong to next indirect block\n");	
 					indirect_block_index++;
 					curr_block_offset = idirblock->blocks[indirect_block_index];
+					curr_block_index++;
 				} else {
+					printf("gong to next direct block\n");	
 					curr_block_index++;
 					curr_block_offset = my_file->blocks[curr_block_index];
 				}
@@ -1334,6 +1356,7 @@ static int wfs_write(const char *path, const char *buf, size_t size, off_t offse
 			// Write is less than remaining space in block
 			else if (size - written_bytes < remaining_space)
 			{
+				printf("sapce left in  block\n");	
 				memcpy(curr_block_ptr, buf + written_bytes, size - written_bytes); // just write the bytes
 				written_bytes += (size - written_bytes);
 			}

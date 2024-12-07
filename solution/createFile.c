@@ -15,7 +15,7 @@ int main(int argc, char* argv[]) {
 		return 1;
 	}
 
-	fd = open ("output.txt" ,O_CREAT|O_RDWR);
+	fd = open ("output.txt" ,O_CREAT|O_RDWR, 0x777);
 	char entry = 'a';
 	printf("Writing %d bytes\n", atoi(argv[1]));
 	for(int i =0; i < atoi(argv[1]);i++) {
