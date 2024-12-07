@@ -1021,9 +1021,8 @@ static int wfs_read(const char *path, char *buf, size_t size, off_t offset, stru
 {
 
 	printf("wfs_read\n");
-	printf("We want to read %d\n", size);
+
 	int bytes_read = 0;
-	int remaining_space;
 
 	// Getting path components
 	char* malleable_path = strdup(path);
@@ -1046,7 +1045,7 @@ static int wfs_read(const char *path, char *buf, size_t size, off_t offset, stru
 
 	// Check if offset too far out
 	if(offset >= my_inode->size) {
-		printf("Inode size is %d\n", my_inode->size);
+		printf("Inode size is %ld\n", my_inode->size);
 		return 0;
 	}
 
@@ -1058,8 +1057,6 @@ static int wfs_read(const char *path, char *buf, size_t size, off_t offset, stru
 	data_ptr = mappings[0] + superblocks[0]->d_blocks_ptr + my_inode->blocks[data_index] + (offset%BLOCK_SIZE);
 	int remaining = BLOCK_SIZE - (offset % BLOCK_SIZE);
 	int offsetcpy = offset;
-	printf("Before offset cpy is %d\n", offsetcpy);
-	printf("Size is %d\n", my_inode->size);
 	while(bytes_read < size && offsetcpy < my_inode->size) {
 		// Write up to end of block
 		if(remaining > 0) {
@@ -1087,8 +1084,6 @@ static int wfs_read(const char *path, char *buf, size_t size, off_t offset, stru
 	else {
 		printf("Exit because of eof\n");
 	}
-	printf("Read %d bytes\n", bytes_read);
-	printf("After offset cpy is %d\n", offsetcpy);
 	return bytes_read;
 }
 
@@ -1143,7 +1138,6 @@ static int wfs_write(const char *path, const char *buf, size_t size, off_t offse
 			}			
 		}
 		curr_block_ptr = mappings[disk] + superblocks[disk]->d_blocks_ptr + curr_block_offset + (offset%512);
-		printf("Write to addr is %p, which is in index %d\n", curr_block_ptr, curr_block_index);
 		remaining_space = 512-(offset % 512);
 		while(written_bytes != size) {
 
@@ -1186,12 +1180,9 @@ static int wfs_write(const char *path, const char *buf, size_t size, off_t offse
 				return -1;
 			}		
 		}
-		printf("Before File size is %d\n", my_file->size);	
-		my_file->size += written_bytes;
-		printf("After File size is %d\n", my_file->size);	
+		my_file->size += written_bytes;	
 	}
 	
-	printf("Written bytes is %d\n", written_bytes);
 	return written_bytes;
 }
 
