@@ -675,6 +675,7 @@ static struct wfs_inode *getInodePath(Path *path, int disk)
 static struct wfs_dentry *findNextDir0(struct wfs_inode *directory, off_t start_de_offset, off_t *new_de_offset, int disk){
 
 	printf("-------------------findNextDir0()--------------\n");
+	printf("Dir num: %d\nStart offset %d\nDisk: %d\n", directory->num, start_de_offset, disk);
 	struct wfs_dentry *current_de = (struct wfs_dentry *)(mappings[disk] + superblocks[disk]->d_blocks_ptr + start_de_offset);
 	struct wfs_dentry *next_de;
 
@@ -702,7 +703,7 @@ static struct wfs_dentry *findNextDir0(struct wfs_inode *directory, off_t start_
 			{
 
 				current_de = (struct wfs_dentry *)(mappings[disk] + superblocks[disk]->d_blocks_ptr + getEntryOffset(directory->blocks[b]) + i);
-
+				printf("Current de is %d\n", current_de);
 				if (current_de->num != 0)
 				{
 					start_de_offset = getEntryOffset(directory->blocks[b]) + i;
@@ -1520,11 +1521,15 @@ static int readdir0(const char *path, void *buf, fuse_fill_dir_t filler, off_t o
 	struct wfs_dentry *direntry;
 	int original_offset = offset;
 	int disk = 0;
+	int filler_offset = 0;
 	while (1)
 	{
-		
-		direntry = findNextDir0(directory, offset, &next_offset,disk );
-
+		if(disk < numdisks) {
+			direntry = findNextDir0(directory, offset, &next_offset,disk );
+		}
+		else {
+			direntry = NULL;
+		}
 		if (direntry == NULL)
 		{
 			if(disk >= numdisks){
@@ -1536,11 +1541,12 @@ static int readdir0(const char *path, void *buf, fuse_fill_dir_t filler, off_t o
 		}
 
 		printf("readdir(): direntry->name: %s num: %d\n, next_offset: %ld\n", direntry->name, direntry->num, next_offset);
-		if (filler(buf, direntry->name, NULL, next_offset) != 0)
+		if (filler(buf, direntry->name, NULL, filler_offset) != 0)
 		{
 			printf("wfs_readdir(): filler returned nonzero\n");
 			return 0;
 		}
+		filler_offset++;
 
 		if (next_offset == 0)
 		{
