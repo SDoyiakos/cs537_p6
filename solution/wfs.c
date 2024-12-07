@@ -631,8 +631,6 @@ void wfs_destroy(void *private_data)
 		print_dbitmap(disk);
 		my_inode = getInode(0, disk);
 		printf("Inode [%d]: num = %d nlinks = %d\n", 0, my_inode->num, my_inode->nlinks);
-		my_inode = getInode(1, disk);
-		printf("Inode [%d]: num = %d nlinks = %d\n", 1, my_inode->num, my_inode->nlinks);
 	}
 }
 
@@ -665,7 +663,6 @@ int mapDisks(int argc, char *argv[])
 		printf("argv[%d]: %s\n", i, argv[i]);
 		disks = realloc(disks, sizeof(int) * numdisks);
 		int fd = open(argv[i], O_RDWR);
-
 		if (fd == -1)
 		{
 			printf("mapDisks(): failed to open file\n");
@@ -710,22 +707,40 @@ int mapDisks(int argc, char *argv[])
 
 	// Map every disk into memory
 	struct stat my_stat;
+	int disk_order;
+	struct wfs_sb disk_superblock;
+
 	for (int k = 0; k < numdisks; k++)
 	{
+		read(disks[k], &disk_superblock, sizeof(struct wfs_sb));
+		disk_order = disk_superblock.disk_order -1; // We start at order 1 so subtract 1
 		fstat(disks[k], &my_stat);																	// Get file information about disk image
-		mappings[k] = mmap(NULL, my_stat.st_size, PROT_READ | PROT_WRITE, MAP_SHARED, disks[k], 0); // Map this image into mem
-		disk_size[k] = my_stat.st_size;
+		mappings[disk_order] = mmap(NULL, my_stat.st_size, PROT_READ | PROT_WRITE, MAP_SHARED, disks[k], 0); // Map this image into mem
+		disk_size[disk_order] = my_stat.st_size;
 		// Check if mmap worked
-		if (mappings[k] == MAP_FAILED)
+		if (mappings[disk_order] == MAP_FAILED)
 		{
 			printf("Error, couldn't mmap disk into memory\n");
 			exit(1);
 		}
 
 		// Set superblock and root according to offsets
-		superblocks[k] = (struct wfs_sb *)mappings[k];
-		roots[k] = (struct wfs_inode *)((char *)superblocks[k] + superblocks[k]->i_blocks_ptr);
+		superblocks[disk_order] = (struct wfs_sb *)mappings[disk_order];
+		roots[disk_order] = (struct wfs_inode *)((char *)superblocks[disk_order] + superblocks[disk_order]->i_blocks_ptr);
 	}
+
+	// Check disk order
+	for(int j =0;j<numdisks;j++) {
+		if(superblocks[j]->total_disks != numdisks) {
+			printf("Discrepancy between total disk count and superblock value\n");
+			exit(-1);
+		}
+		if(superblocks[j]->disk_order != j+1) {
+			printf("Error disks out of order, order %d, expected %d\n", superblocks[j]->disk_order, j+1);
+			//exit(-1);
+		}
+	}
+	
 	printf("end mapdisks\n");
 	return i;
 }
@@ -963,7 +978,86 @@ static int wfs_mknod(const char *path, mode_t mode, dev_t rdev)
 
 static int wfs_rmdir(const char *path)
 {
-	printf("wfs_rmdir()\n");
+
+	for(int disk = 0;disk<numdisks;disk++) {
+		
+	
+		printf("wfs_rmdir()\n");
+
+		char* malleable_path;
+		Path* p;
+		char* dir_name;
+		struct wfs_inode* my_inode;
+		struct wfs_inode* parent;
+		malleable_path = strdup(path);
+		if(malleable_path == NULL) {
+			printf("Cant get path for dir\n");
+			return -1;
+		}
+
+		p = splitPath(malleable_path);
+		if(p == NULL) {
+			printf("Couldn't split path\n");
+			return -1;
+		}
+
+		// Getting the dir to be removed
+		my_inode = getInodePath(p, disk);
+		if(my_inode == NULL) {
+			printf("Error allocating inode in rmdir\n");
+			return -1;
+		}
+
+		// Allocating child name
+		dir_name = strdup(p->path_components[p->size-1]);
+		if(dir_name == NULL) {
+			printf("Dir name couldnt alloc in rmdir\n");
+			return -1;
+		}
+
+		// Getting the parent
+		p->size--;
+		parent = getInodePath(p, disk);
+		if(parent == NULL) {
+			printf("Error allocating parent in rmdir\n");
+			return -1;
+		}
+
+		// Check if it is a dir
+		if( (my_inode->mode & S_IFDIR) == 0) {
+			printf("Error cant rmdir on a non-dir\n");
+			return -1;
+		}
+
+		// Check if its empty
+		if(my_inode->size != 0) {
+			printf("Error, dir not empty\n");
+			return -1;
+		}
+
+		// Getting the directory entry in the parent
+		struct wfs_dentry* my_dirent;
+		my_dirent = searchDir(parent, dir_name,disk);
+		if(my_dirent == NULL) {
+			printf("Entry not found in rmdir\n");
+			return -1;
+		}
+
+		int block;
+		
+		// Free the entry in the parent dir
+		memset(my_dirent,0, sizeof(struct wfs_dentry));	
+		parent->size-=sizeof(struct wfs_dentry);	
+		for(int i =0; i < N_BLOCKS;i++) {
+			if(my_inode->blocks[i] != -1) {
+				block = my_inode->blocks[i] / BLOCK_SIZE;
+				markbitmap_d(block, 0, disk);
+			}
+		}
+
+		markbitmap_i(my_inode->num, 0, disk); // Freeing inode
+		wfs_unlink(path); // Removing it in parent?
+	}
 	return 0;
 }
 
@@ -1035,7 +1129,6 @@ static int wfs_read(const char *path, char *buf, size_t size, off_t offset, stru
 {
 
 	printf("wfs_read\n");
-	printf("We want to read %ld\n", size);
 	int bytes_read = 0;
 
 	// Getting path components
@@ -1081,8 +1174,6 @@ static int wfs_read(const char *path, char *buf, size_t size, off_t offset, stru
 
 	int remaining = BLOCK_SIZE - (offset % BLOCK_SIZE);
 	int offsetcpy = offset;
-	printf("Before offset cpy is %d\n", offsetcpy);
-	printf("Size is %ld\n", my_inode->size);
 	while(bytes_read < size && offsetcpy < my_inode->size) {
 		// Write up to end of block
 		if(remaining > 0) {
@@ -1116,8 +1207,6 @@ static int wfs_read(const char *path, char *buf, size_t size, off_t offset, stru
 	else {
 		printf("Exit because of eof\n");
 	}
-	printf("Read %d bytes\n", bytes_read);
-	printf("After offset cpy is %d\n", offsetcpy);
 	return bytes_read;
 }
 
@@ -1190,7 +1279,6 @@ static int wfs_write(const char *path, const char *buf, size_t size, off_t offse
 		}
 
 		curr_block_ptr = mappings[disk] + superblocks[disk]->d_blocks_ptr + curr_block_offset + (offset%512);
-		printf("Write to addr is %p, which is in index %d\n", curr_block_ptr, curr_block_index);
 		remaining_space = 512-(offset % 512);
 		while(written_bytes != size) {
 
@@ -1255,12 +1343,9 @@ static int wfs_write(const char *path, const char *buf, size_t size, off_t offse
 				return -1;
 			}	
 		}
-		printf("Before File size is %ld\n", my_file->size);	
-		my_file->size += written_bytes;
-		printf("After File size is %ld\n", my_file->size);	
+		my_file->size += written_bytes;	
 	}
 	
-	printf("Written bytes is %d\n", written_bytes);
 	return written_bytes;
 }
 
