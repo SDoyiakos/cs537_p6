@@ -1068,13 +1068,13 @@ static int wfs_read(const char *path, char *buf, size_t size, off_t offset, stru
 
 	//INDIRECT EXTENSION
 	int indirect_block_index = -1;
-	struct wfs_block * indirblock = NULL;
+	struct IndirectBlock * indirblock = NULL;
 
 	data_index = offset / BLOCK_SIZE; // Going into the block which has this data
 	if(data_index >= IND_BLOCK){
 		indirect_block_index = data_index - D_BLOCK;
-		indirblock = mappings[0] + superblocks[0]->d_blocks_ptr + my_inode->blocks[IND_BLOCK];
-		data_ptr = mappings[0] + superblocks[0]->d_blocks_ptr + indirblock[indirect_block_index];
+		indirblock =(struct IndirectBlock *)( mappings[0] + superblocks[0]->d_blocks_ptr + my_inode->blocks[IND_BLOCK]);
+		data_ptr = mappings[0] + superblocks[0]->d_blocks_ptr + indirblock->blocks[indirect_block_index];
 	} else {
 		data_ptr = mappings[0] + superblocks[0]->d_blocks_ptr + my_inode->blocks[data_index] + (offset%BLOCK_SIZE);
 	}
@@ -1096,9 +1096,9 @@ static int wfs_read(const char *path, char *buf, size_t size, off_t offset, stru
 		else if(remaining == 0) {
 			data_index++;
 			if(data_index >= IND_BLOCK){
-				indirect_bock_index++;
-				indirblock = mappings[0] + superblocks[0]->d_blocks_ptr + my_inode->blocks[IND_BLOCK];
-				data_ptr = mappings[0] + superblocks[0]->d_blocks_ptr + indirblock[indirect_block_index];
+				indirect_block_index++;
+				indirblock =(struct IndirectBlock *)( mappings[0] + superblocks[0]->d_blocks_ptr + my_inode->blocks[IND_BLOCK]);
+				data_ptr = mappings[0] + superblocks[0]->d_blocks_ptr + indirblock->blocks[indirect_block_index];
 			} else {
 				data_ptr = mappings[0] + superblocks[0]->d_blocks_ptr + my_inode->blocks[data_index];
 			}
