@@ -181,7 +181,7 @@ static struct wfs_inode* allocateInode(int disk) {
 	my_inode->num = data_bit;
 	my_inode->uid = getuid();
 	my_inode->gid = getgid();
-	my_inode->size = 0;
+	my_inode->size = sizeof(struct wfs_inode);
 	my_inode->nlinks = 0;
 	my_inode->atim = time(0);
 	my_inode->mtim = time(0);
@@ -284,7 +284,6 @@ static struct wfs_dentry* findOpenDir(struct wfs_inode* parent, int disk) {
 	for(int i = 0; i < N_BLOCKS;i++) {
 		if(parent->blocks[i] == -1) {
 			parent->blocks[i] = allocateBlock(disk);
-			parent->size+= BLOCK_SIZE;
 			curr_entry = (struct wfs_dentry*)((char*)mappings[disk] + superblocks[disk]->d_blocks_ptr + parent->blocks[i]);
 			return curr_entry;
 		}
@@ -318,6 +317,7 @@ static int linkdir(struct wfs_inode* parent, struct wfs_inode* child, char* chil
 
 	//parent->nlinks++;
 	child->nlinks = 1;
+	parent->size += sizeof(struct wfs_dentry);
 
 	return 0;
 	
@@ -425,8 +425,6 @@ static int wfs_mkdir(const char* path, mode_t mode) {
 			printf("Linking error\n");
 		}
 	}
-
-	
 	return 0;
 	
 }
