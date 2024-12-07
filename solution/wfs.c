@@ -1171,8 +1171,7 @@ static int wfs_unlink(const char *path)
 	}
 	return 0;
 }
-
-static int wfs_mknod(const char *path, mode_t mode, dev_t rdev)
+static int wfs_mknod1(const char *path, mode_t mode, dev_t rdev)
 {
 	for (int disk = 0; disk < numdisks; disk++)
 	{
@@ -1231,6 +1230,93 @@ static int wfs_mknod(const char *path, mode_t mode, dev_t rdev)
 	}
 
 	printf("mknod done\n");
+	return 0;
+}
+
+static int wfs_mknod0(const char *path, mode_t mode, dev_t rdev)
+{
+
+	printf("wfs_mknod\n");
+	char *malleable_path;
+	Path *p;
+	char *dir_name;
+	struct wfs_inode *parent;
+	struct wfs_inode *child;
+
+	// Making path modifiable
+	malleable_path = strdup(path);
+	if (malleable_path == NULL)
+	{
+		printf("couldnt get malleable path\n");
+		return -1;
+	}
+
+	p = splitPath(malleable_path); // Break apart path
+
+	for (int i = 0; i < p->size; i++)
+	{
+		printf("Path component [%d]: %s\n", i, p->path_components[i]);
+	}
+
+	if (getInodePath(p, 0) != NULL)
+	{
+		printf("File already exists\n");
+		return -EEXIST;
+	}
+
+	// Strip last element but save name
+	dir_name = p->path_components[p->size - 1];
+	p->size--;
+
+	parent = getInodePath(p, 0);
+	if (parent == NULL)
+	{
+		printf("Error getting parent\n");
+		return -1;
+	}
+
+	child = allocateInode(0);
+	if (child == NULL)
+	{
+		printf("Error allocating child\n");
+		return -ENOSPC;
+	}
+
+	child->mode |= mode;
+
+	if (linkdir(parent, child, dir_name, 0) == -1)
+	{
+		printf("Linking error\n");
+	}
+
+		struct wfs_inode* first; 
+	struct wfs_inode* second;
+	for(int k = 0; k < numdisks;k++) {
+	first = (struct wfs_inode*)(mappings[0] + superblocks[0]->i_blocks_ptr);
+	second = (struct wfs_inode*)(mappings[k] + superblocks[k]->i_blocks_ptr);
+		for(int i = 0; i < superblocks[0]->num_inodes;i++){
+			memcpy(second, first, sizeof(struct wfs_inode));
+			first++;
+			second++;
+		}
+
+		// Copying inode bitmaps
+		memcpy(superblocks[k], superblocks[0], superblocks[0]->d_bitmap_ptr);		
+	}
+
+	printf("mknod done\n");
+	
+	return 0;
+}
+
+static int wfs_mknod(const char *path, mode_t mode, dev_t rdev)
+{
+	if(raid_mode == 0) {
+		return wfs_mknod0(path, mode, rdev);
+	}
+	else if(raid_mode == 1) {
+		return wfs_mknod1(path, mode, rdev);
+	}
 	return 0;
 }
 
