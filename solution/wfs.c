@@ -52,6 +52,7 @@ struct IndirectBlock
 };
 
 // ------------HELPTER FUNCINTS-----------------
+// entry is the encoded values. This returns the block offset;
 static int getEntryOffset(int entry) {
 	int ret_val = entry;
 	entry = entry % BLOCK_SIZE;
@@ -59,11 +60,13 @@ static int getEntryOffset(int entry) {
 	return ret_val;
 }
 
+// returns teh disk for  given entry
 static int getEntryDisk(int entry) {
 	int ret_val = entry % BLOCK_SIZE;
 	return ret_val;
 }
 
+// tshi returnst eh next disk and updates it
 static int getNextDisk() {
 	int ret_val = next_disk;
 	next_disk= (next_disk + 1) % numdisks;
@@ -513,6 +516,93 @@ static struct wfs_inode *getInodePath(Path *path, int disk)
 	return current_inode;
 }
 
+// finds entry at the de_offset, then finds offset to next dentry for raid0
+// start_de_offset still == offset from data_blocks_ptr to next direntry
+static struct wfs_dentry *findNextDir0(struct wfs_inode *directory, off_t start_de_offset, off_t *new_de_offset, int disk){
+
+	printf("-------------------findNextDir0()--------------\n");
+	struct wfs_dentry *current_de = (struct wfs_dentry *)(mappings[disk] + superblocks[disk]->d_blocks_ptr + start_de_offset);
+	struct wfs_dentry *next_de;
+
+	int start_block = de_offset / BLOCK_SIZE;
+
+	// if its the first time calling findNextDir, then get the first de in the dir
+	if (start_de_offset == 0)
+	{
+		printf("de_offset == 0\n");
+		int found = 0;
+
+		for (int b = 0; b < N_BLOCKS; b++)
+		{
+			if (found != 0)
+			{
+				break;
+			}
+
+			if (directory->blocks[b] == -1)
+			{
+				continue;
+			}
+
+			for (int i = 0; i < BLOCK_SIZE; i += sizeof(struct wfs_dentry))
+			{
+
+				current_de = (struct wfs_dentry *)(mappings[disk] + superblocks[disk]->d_blocks_ptr + getEntryOffset(directory->blocks[b]) + i);
+
+				if (current_de->num != 0)
+				{
+					start_de_offset = getEntryOffset(directory->blocks[b]) + i;
+					found = 1;
+					start_block = b;
+					break;
+				}
+			}
+		}
+
+		// IF DIR IS EMPTY
+		if (found == 0)
+		{
+			return NULL;
+		}
+	}
+
+	printf("start_block: %d, start_de_offset: %ld \n", start_block, start_de_offset);
+	uint min_offset = start_de_offset;
+	// NOW that we have de_offset and current_de, find the next_de's offset
+	// if de_offset is the end of a block, start searching for the next de at the next block. 
+	// otherwise, search for the next de in the current block. If the de_offset
+	for (int b = start_block; b < N_BLOCKS; b++)
+	{
+		printf("b: %d\n", b);
+		if(directory->blocks[b] == -1){
+			continue;
+		}
+		
+		uint o;
+		for (o = ((min_offset % BLOCK_SIZE)); o < BLOCK_SIZE;
+			 o += sizeof(struct wfs_dentry))
+		{
+			printf("we here: o: %d\n", o);
+			next_de = (struct wfs_dentry *)(mappings[disk] + superblocks[disk]->d_blocks_ptr + getEntryOffset(directory->blocks[b]) +  o);
+
+			if ((next_de->num != 0) && (strcmp(next_de->name, current_de->name) != 0))
+			{
+				printf("FOUND NEXT DIR: curr_dir->name: %s next_de->name : %s\n", current_de->name, next_de->name);
+				*new_de_offset = getEntryOffset(directory->blocks[b]) + o;
+				return current_de;
+			}
+		}
+		
+		// we need to go to the next block
+		min_offset = 0;
+	}
+	
+	// Reached end of directory and no new dentries found
+	printf("end of dir\n");
+	*new_de_offset = 0;
+	return current_de;
+}
+
 // finds the dentry at the de_offset, then finds the offset to the next direntry. Returns
 // eg: let mnt have files a b c.
 // not
@@ -520,10 +610,10 @@ static struct wfs_inode *getInodePath(Path *path, int disk)
 // findNextDir(root, 12, new_off) = b, new_off = offset to c.
 // findNextDir(root, c_ffset, new_off) = c, new_off = 0
 // note that blocks[b] == offset from d_blocks_ptr
-static struct wfs_dentry *findNextDir(struct wfs_inode *directory, off_t de_offset, off_t *new_de_offset)
+static struct wfs_dentry *findNextDir1(struct wfs_inode *directory, off_t de_offset, off_t *new_de_offset, int disk)
 {
 
-	printf("findNextDir()--------------\n");
+	printf("-------------------findNextDir()--------------\n");
 	struct wfs_dentry *current_de = (struct wfs_dentry *)(mappings[0] + superblocks[0]->d_blocks_ptr + de_offset);
 	struct wfs_dentry *next_de;
 
@@ -1079,6 +1169,80 @@ static int wfs_rmdir(const char *path)
 	return 0;
 }
 
+static int wfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi){
+	if(raid_mode == 1){
+		return readdir1(path, buf, offset, fi);
+	} else if (raid_mode == 0){
+		return readdir0(path, buf, offset, fi);
+	}
+
+}
+static int readdir0(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi)
+{
+	printf("=-----------WFS_READDIR0()---------\n");
+	char *pathcpy = strdup(path);
+	Path *p = splitPath(pathcpy);
+	if (p == NULL)
+	{
+		printf("wfs_readdir(): path is null\n");
+	}
+	//TODO; FIx getInodePath
+	struct wfs_inode *directory = getInodePath(p, 0);
+	if (directory == NULL)
+	{
+		return -ENOENT;
+	}
+
+	if ((directory->mode && S_IFDIR) == 0)
+	{
+		return -EBADF;
+	}
+
+	off_t next_offset = 0;
+	struct wfs_dentry *direntry;
+	int original_offset = offset;
+	int disk = 0;
+	while (1)
+	{
+		
+		direntry = findNextDir0(directory, offset, &next_offset,disk );
+
+		if (direntry == NULL)
+		{
+			if(disk >= numdisks){
+				printf("empty dir\n");
+				return 0;
+			}
+			disk++;
+			continue;
+		}
+
+		printf("readdir(): direntry->name: %s num: %d\n, next_offset: %ld\n", direntry->name, direntry->num, next_offset);
+		if (filler(buf, direntry->name, NULL, next_offset) != 0)
+		{
+			printf("wfs_readdir(): filler returned nonzero\n");
+			return 0;
+		}
+
+		if (next_offset == 0)
+		{
+			if(original_offset > 0){
+				offset = 0;
+				printf("original offset > 0\n");
+				continue;
+			}
+			if(disk >= numdisks){
+				printf("wfs_readir(): no more files\n");
+				return 0;
+			}
+			disk++;
+		}
+		offset = next_offset;
+	}
+
+	printf("wfs_readdir(): failed somehow\n");
+	return -1;
+}
 // Return one or more directory entries (struct dirent) to the caller
 // It is related to, but not identical to, the readdir(2) and getdents(2) system calls, and the readdir(3) library function. Because of its complexity, it is described separately below. Required for essentially any filesystem,
 //  since it's what makes ls and a whole bunch of other things work.
@@ -1086,8 +1250,7 @@ static int wfs_rmdir(const char *path)
 
 // We shall let offset = the offset from the  d_blocks_ptr to the first dentry
 // if offset == 0 then we search for the first dentry and set the offset to the next dentry
-static int wfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
-					   off_t offset, struct fuse_file_info *fi)
+static int readdir1(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi)
 {
 	printf("WFS_READDIR()---------\n");
 	char *pathcpy = strdup(path);
@@ -1113,7 +1276,7 @@ static int wfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	while (1)
 	{
 		
-		direntry = findNextDir(directory, offset, &next_offset);
+		direntry = findNextDir1(directory, offset, &next_offset);
 
 		if (direntry == NULL)
 		{
@@ -1315,7 +1478,25 @@ static int wfs_read(const char *path, char *buf, size_t size, off_t offset, stru
 	}
 }
 
-static int wfs_write(const char *path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fi)
+static int wfs_write(const char *path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fi){
+
+	if(raid_mode == 1){
+		printf("raid1\n");
+		return write_raid1(path, buf, size, offset, fi);
+	}
+
+}
+
+static int write_raid0(const char *path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fi){
+	int disk = getNextDisk();
+	int blockindex = offset / BLOCK_SIZE:	
+	//	
+	
+	return 0;
+}
+
+
+static int write_raid1(const char *path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fi)
 {
 	
 	int written_bytes = 0;
