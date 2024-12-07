@@ -949,7 +949,84 @@ static int wfs_mknod(const char *path, mode_t mode, dev_t rdev)
 
 static int wfs_rmdir(const char *path)
 {
-	printf("wfs_rmdir()\n");
+
+	for(int disk = 0;disk<numdisks;disk++) {
+		
+	
+		printf("wfs_rmdir()\n");
+
+		char* malleable_path;
+		Path* p;
+		char* dir_name;
+		struct wfs_inode* my_inode;
+		struct wfs_inode* parent;
+		malleable_path = strdup(path);
+		if(malleable_path == NULL) {
+			printf("Cant get path for dir\n");
+			return -1;
+		}
+
+		p = splitPath(malleable_path);
+		if(p == NULL) {
+			printf("Couldn't split path\n");
+			return -1;
+		}
+
+		// Getting the dir to be removed
+		my_inode = getInodePath(p, disk);
+		if(my_inode == NULL) {
+			printf("Error allocating inode in rmdir\n");
+			return -1;
+		}
+
+		// Allocating child name
+		dir_name = strdup(p->path_components[p->size-1]);
+		if(dir_name == NULL) {
+			printf("Dir name couldnt alloc in rmdir\n");
+			return -1;
+		}
+
+		// Getting the parent
+		p->size--;
+		parent = getInodePath(p, disk);
+		if(parent == NULL) {
+			printf("Error allocating parent in rmdir\n");
+			return -1;
+		}
+
+		// Check if it is a dir
+		if( (my_inode->mode & S_IFDIR) == 0) {
+			printf("Error cant rmdir on a non-dir\n");
+			return -1;
+		}
+
+		// Check if its empty
+		if(my_inode->size != 0) {
+			printf("Error, dir not empty\n");
+			return -1;
+		}
+
+		// Getting the directory entry in the parent
+		struct wfs_dentry* my_dirent;
+		my_dirent = searchDir(parent, dir_name,disk);
+		if(my_dirent == NULL) {
+			printf("Entry not found in rmdir\n");
+			return -1;
+		}
+
+		int block;
+		// Free the entry
+		memset(my_dirent,0, sizeof(struct wfs_dentry));		
+		for(int i =0; i < N_BLOCKS;i++) {
+			if(my_inode->blocks[i] != -1) {
+				block = my_inode->blocks[i] / BLOCK_SIZE;
+				markbitmap_d(block, 0, disk);
+			}
+		}
+
+		markbitmap_i(my_inode->num, 0, disk); // Freeing inode
+		wfs_unlink(path); // Removing it in parent?
+	}
 	return 0;
 }
 
