@@ -636,31 +636,6 @@ static struct wfs_inode *getInodePath1(Path *path, int disk)
 
 	return current_inode;
 }
-/** getInode
- * Returns the inode at the end of the path
- **/
-static struct wfs_inode *getInodePath0(Path *path, int disk)
-{
-	printf("getInodePath0\n"); 
-	struct wfs_inode *current_inode;
-	char *curr_entry_name;
-	struct wfs_dentry *curr_entry_dirent;
-	current_inode = roots[disk]; // Get root inode 
-	for (int i = 0; i < path->size; i++)
-	{
-		curr_entry_name = path->path_components[i]; // Get next child name
-		curr_entry_dirent = searchDir(current_inode, curr_entry_name, disk);
-		// Check if entry found
-		if (curr_entry_dirent == NULL)
-		{
-			printf("Couldn't find entry %s\n", curr_entry_name);
-			return NULL;
-		}
-		current_inode = getInode(curr_entry_dirent->num, disk);
-	}
-
-	return current_inode;
-}
 
 /** getInode
  * Returns the inode at the end of the path
@@ -675,7 +650,6 @@ static struct wfs_inode *getInodePath(Path *path, int disk)
 static struct wfs_dentry *findNextDir0(struct wfs_inode *directory, off_t start_de_offset, off_t *new_de_offset, int disk){
 
 	printf("-------------------findNextDir0()--------------\n");
-	printf("Dir num: %d\nStart offset %d\nDisk: %d\n", directory->num, start_de_offset, disk);
 	struct wfs_dentry *current_de = (struct wfs_dentry *)(mappings[disk] + superblocks[disk]->d_blocks_ptr + start_de_offset);
 	struct wfs_dentry *next_de;
 
@@ -703,7 +677,6 @@ static struct wfs_dentry *findNextDir0(struct wfs_inode *directory, off_t start_
 			{
 
 				current_de = (struct wfs_dentry *)(mappings[disk] + superblocks[disk]->d_blocks_ptr + getEntryOffset(directory->blocks[b]) + i);
-				printf("Current de is %d\n", current_de);
 				if (current_de->num != 0)
 				{
 					start_de_offset = getEntryOffset(directory->blocks[b]) + i;
@@ -1130,7 +1103,13 @@ static int wfs_mkdir1(const char *path, mode_t mode)
 		{
 			printf("Linking error\n");
 		}
+		free(dir_name);
+		for(int i = 0; i < p->size;i++) {
+			free(p->path_components[i]);
+		}
+		free(p);
 	}
+	
 	return 0;
 }
 
@@ -1400,7 +1379,6 @@ static int wfs_mknod0(const char *path, mode_t mode, dev_t rdev)
 	second = (struct wfs_inode*)(mappings[k] + superblocks[k]->i_blocks_ptr);
 		for(int i = 0; i < superblocks[k]->num_inodes;i++){
 			memcpy(second, first, sizeof(struct wfs_inode));
-			printf("First num %p\nSecond num %p\n", first, second);
 			first = (struct wfs_inode*)((char*)first + BLOCK_SIZE);
 			second = (struct wfs_inode*)((char*)second + BLOCK_SIZE);
 		}
@@ -1533,7 +1511,6 @@ static int readdir0(const char *path, void *buf, fuse_fill_dir_t filler, off_t o
 
 	off_t next_offset = 0;
 	struct wfs_dentry *direntry;
-	int original_offset = offset;
 	int disk = 0;
 	off_t filler_offset = 0;
 	
@@ -1835,9 +1812,6 @@ static int wfs_read(const char *path, char *buf, size_t size, off_t offset, stru
 	return -1;
 }
 static int write_raid0(const char *path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fi){
-	printf("Write raid0\n");
-	printf("Size is %d\n", size);
-	printf("offset is %d\n");
 	int written_bytes = 0;
 	int disk =0;
 	Path* p;
