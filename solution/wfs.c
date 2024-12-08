@@ -323,7 +323,6 @@ static Path *splitPath(char *path)
  **/
 static struct wfs_inode *getInode(int inum, int disk)
 {
-
 	// Check if its allocated
 	if (checkIBitmap(inum, disk) == 0)
 	{
@@ -854,7 +853,7 @@ static struct wfs_dentry *findNextDir1(struct wfs_inode *directory, off_t de_off
 
 void print_ibitmap(int disk)
 {
-	int numinodes = superblocks[0]->num_inodes;
+	int numinodes = superblocks[disk]->num_inodes;
 	unsigned char *inode_bitmap = mappings[disk] + superblocks[disk]->i_bitmap_ptr;
 	for (int i = 0; i < numinodes / 8; i++)
 	{
@@ -883,19 +882,7 @@ void print_dbitmap(int disk)
 
 void wfs_destroy(void *private_data)
 {
-
 	printf("wfs_destroy\n");
-	struct wfs_inode *my_inode;
-	for (int disk = 0; disk < numdisks; disk++)
-	{
-		printf("DISK %d\n", disk);
-		printf("Inode bitmap: ");
-		print_ibitmap(disk);
-		printf("Data bitmap: ");
-		print_dbitmap(disk);
-		my_inode = getInode(0, disk);
-		printf("Inode [%d]: num = %d nlinks = %d\n", 0, my_inode->num, my_inode->nlinks);
-	}
 }
 
 unsigned char *bget(unsigned int bnum, int disk)
@@ -1069,13 +1056,14 @@ static int wfs_mkdir0(const char *path, mode_t mode)
 
 		struct wfs_inode* first; 
 		struct wfs_inode* second;
-		for(int k = 0; k < numdisks;k++) {
+		for(int k = 1; k < numdisks;k++) {
 		first = (struct wfs_inode*)(mappings[0] + superblocks[0]->i_blocks_ptr);
 		second = (struct wfs_inode*)(mappings[k] + superblocks[k]->i_blocks_ptr);
 		for(int i = 0; i < superblocks[0]->num_inodes;i++){
 			memcpy(second, first, sizeof(struct wfs_inode));
-			first++;
-			second++;
+			printf("First num is %d\nSecond num is %d\n", first->num, second->num);
+			first = (struct wfs_inode*)((char*)first + BLOCK_SIZE);
+			second = (struct wfs_inode*)((char*)second + BLOCK_SIZE);
 		}
 
 		// Copying inode bitmaps
@@ -1396,6 +1384,8 @@ static int wfs_mknod0(const char *path, mode_t mode, dev_t rdev)
 		return -ENOSPC;
 	}
 
+	printf("Child number is %d\n", child->num);
+
 	child->mode |= mode;
 
 	if (linkdir(parent, child, dir_name, 0) == -1)
@@ -1403,15 +1393,16 @@ static int wfs_mknod0(const char *path, mode_t mode, dev_t rdev)
 		printf("Linking error\n");
 	}
 
-		struct wfs_inode* first; 
+	struct wfs_inode* first; 
 	struct wfs_inode* second;
-	for(int k = 0; k < numdisks;k++) {
+	for(int k = 1; k < numdisks;k++) {
 	first = (struct wfs_inode*)(mappings[0] + superblocks[0]->i_blocks_ptr);
 	second = (struct wfs_inode*)(mappings[k] + superblocks[k]->i_blocks_ptr);
-		for(int i = 0; i < superblocks[0]->num_inodes;i++){
+		for(int i = 0; i < superblocks[k]->num_inodes;i++){
 			memcpy(second, first, sizeof(struct wfs_inode));
-			first++;
-			second++;
+			printf("First num %p\nSecond num %p\n", first, second);
+			first = (struct wfs_inode*)((char*)first + BLOCK_SIZE);
+			second = (struct wfs_inode*)((char*)second + BLOCK_SIZE);
 		}
 
 		// Copying inode bitmaps
@@ -1837,14 +1828,109 @@ static int wfs_read(const char *path, char *buf, size_t size, off_t offset, stru
 	printf("wfs_read\n");
 	if(raid_mode == 1 ) {
 		return read1(path, buf, size, offset);
+	}
+	else if(raid_mode == 0) {
+		return read0(path, buf, size, offset);
+	}
 	return -1;
 }
-}
 static int write_raid0(const char *path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fi){
-	int disk = getNextDisk();
-	int blockindex = offset / BLOCK_SIZE;	
+	printf("Write raid0\n");
+	printf("Size is %d\n", size);
+	printf("offset is %d\n");
+	int written_bytes = 0;
+	int disk =0;
+	Path* p;
+	char* malleable_path;
+	struct wfs_inode* my_file;
+	off_t curr_block_offset;
+	unsigned char *curr_block_ptr;
+	int remaining_space;
+	int curr_block_index;
+
+	malleable_path = strdup(path);
+	if (malleable_path == NULL)
+	{
+		printf("Couldnt create malleable_path\n");
+		return -1;
+	}
+
+	p = splitPath(malleable_path);
+	if (p == NULL)
+	{
+		printf("Couldnt split path\n");
+		return -1;
+	}
+
+	my_file = getInodePath(p, disk);
+	printf("my_file->num: %d\n", my_file->num);
+	if (my_file == NULL)
+	{
+		printf("File does not exist\n");
+		return -ENOENT;
+	}
+
+	curr_block_index = offset / 512;
+	curr_block_offset = my_file->blocks[curr_block_index];
+	if(curr_block_offset == -1) {
+		printf("No block found for write, we are going to grow the file\n");
+		disk = getNextDisk();
+		printf("Allocated disk is %d\n", disk);
+		my_file->blocks[curr_block_index] = allocateBlock(disk);
+		if(my_file->blocks[curr_block_index] == -1) {
+			printf("No space to write\n");
+			return -ENOSPC;
+		}
+		curr_block_offset = my_file->blocks[curr_block_index];
+	}
 	
-	return 0;
+	curr_block_ptr = mappings[disk] + superblocks[disk]->d_blocks_ptr + getEntryOffset(curr_block_offset); 
+	disk = getEntryDisk(curr_block_offset);
+	remaining_space = BLOCK_SIZE -  (offset % BLOCK_SIZE);
+	while(written_bytes != size) {
+		printf("Loop\n");
+		if(curr_block_offset == -1){
+			disk = getNextDisk();
+			printf("in while\n");
+			printf("Allocated disk is %d\n", disk);
+			my_file->blocks[curr_block_index] = allocateBlock(disk);
+			curr_block_offset = my_file->blocks[curr_block_index];
+			if (curr_block_offset == -1) { // If still not allocated then exit on error of no space
+				return -ENOSPC;
+			}
+			curr_block_ptr = mappings[disk] + superblocks[disk]->d_blocks_ptr + getEntryOffset(curr_block_offset);
+		}
+
+
+		if (size - written_bytes >= remaining_space) {
+			printf("writing entire block, going to next blockn\n");
+			memcpy(curr_block_ptr, buf + written_bytes, remaining_space); // Fill rest of block
+			written_bytes += remaining_space;							  // Update how many bytes we have written
+			curr_block_index++;
+			curr_block_offset = my_file->blocks[curr_block_index];
+			if(curr_block_offset != -1) {
+				curr_block_ptr = mappings[disk] + superblocks[disk]->d_blocks_ptr + getEntryOffset(curr_block_offset);
+			}		
+			remaining_space = BLOCK_SIZE;
+		}
+
+		// Write is less than remaining space in block
+		else if ((size - written_bytes) < remaining_space)
+		{
+			printf("writing partial block\n");
+			memcpy(curr_block_ptr, buf + written_bytes, size - written_bytes); // just write the bytes
+			written_bytes += (size - written_bytes);
+		}
+		else
+		{
+			printf("Error you cant write more ... you shouldn't be here\n");
+			return -1;
+		}	
+		
+	}
+	my_file->size += written_bytes;	
+	printf("Wrote %d bytes\n", written_bytes);
+	return written_bytes;
 }
 
 
@@ -2004,6 +2090,10 @@ static int wfs_write(const char *path, const char *buf, size_t size, off_t offse
 		printf("raid1\n");
 		return write_raid1(path, buf, size, offset, fi);
 	}
+	else if(raid_mode == 0) {
+		return write_raid0(path, buf, size, offset, fi);
+	}
+	return -1;
 
 }
 static int wfs_getattr(const char *path, struct stat *stbuf)
