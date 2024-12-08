@@ -215,6 +215,7 @@ static int allocateBlock(int disk)
 // allocates a block for the indirect block and initialies all its pointers to -1
 static int initializeIndirectBlock(int disk){
 	// allocate the first block
+	printf("initalizeIndirectBlock()\n");
 	int indirectBlock_offset = allocateBlock(disk);
 	struct IndirectBlock *indirectBlock	= (struct IndirectBlock *)(mappings[disk] + superblocks[disk]->d_blocks_ptr + indirectBlock_offset);
 	for(int i = 0; i < (BLOCK_SIZE / sizeof(off_t)); i++){
@@ -1202,18 +1203,27 @@ static int wfs_unlink(const char *path)
 			return -ENOENT;
 		}
 
+		if (deleteDentry(directory, file_name, disk) != 0)
+		{
+			printf("failed to remove file's dentry from dir\n");
+			return -1;
+		}
+
 		// DELETE FILE IF NLINKS== 0
 		file->nlinks--;
 		if (file->nlinks == 0)
 		{
 			// TODO: UNCLEAR WHETHER WE MUST ZERO THESE OUT
 			//  free the direct blocks
-			for (int d = 0; d < D_BLOCK + 1; d++)
+			printf("am deleting file\n");
+			int block_num;
+			for (int d = 0; d < N_BLOCKS -1; d++)
 			{
 				if(file->blocks[d] == -1){
 					continue;
 				}
-				uint block_num = file->blocks[d] / BLOCK_SIZE;
+				block_num = file->blocks[d] / BLOCK_SIZE;
+				printf("direct blockk num: %d\n", block_num);
 				void *block = mappings[disk] + superblocks[disk]->d_blocks_ptr + file->blocks[d];
 				if (memset(block, 0, BLOCK_SIZE) != block)
 				{
@@ -1228,18 +1238,31 @@ static int wfs_unlink(const char *path)
 			if (file->blocks[IND_BLOCK] != -1)
 			{
 				struct IndirectBlock *indirect_block = (struct IndirectBlock *)(mappings[disk] + superblocks[disk]->d_blocks_ptr + file->blocks[IND_BLOCK]);
-
+				printf("freeing indreict blocks\n");
 				for (int i = 0; i < BLOCK_SIZE/sizeof(off_t); i++)
 				{
-					int block_num = indirect_block->blocks[i] / BLOCK_SIZE;
+					if(indirect_block->blocks[i] == -1){
+						continue;
+					}	
+					block_num = indirect_block->blocks[i] / BLOCK_SIZE;
+					printf("i: %d freeing indirect block %d\n", i, block_num);
 					void *block = mappings[disk] + superblocks[disk]->d_blocks_ptr + indirect_block->blocks[i];
 						
 					if (memset(block, 0, BLOCK_SIZE) != block)
 					{
 						printf("unlink(): memset failed\n");
 					}
+
 					markbitmap_d(block_num, 0, disk);
 				}
+				block_num = file->blocks[IND_BLOCK] / BLOCK_SIZE;
+				markbitmap_d(block_num, 0, disk);
+				void *block = mappings[disk] + superblocks[disk]->d_blocks_ptr + indirect_block->blocks[IND_BLOCK];
+				if (memset(block, 0, BLOCK_SIZE) != block)
+				{
+					printf("unlink(): memset failed\n");
+				}
+	
 			}
 
 			// Free the inode
@@ -1254,11 +1277,11 @@ static int wfs_unlink(const char *path)
 		// remove the directory entry to the file
 		
 	
-		if (deleteDentry(directory, file_name, disk) != 0)
-		{
-			printf("failed to remove file's dentry from dir\n");
-			return -1;
-		}
+//		if (deleteDentry(directory, file_name, disk) != 0)
+//		{
+//			printf("failed to remove file's dentry from dir\n");
+//			return -1;
+//		}
 	}
 	return 0;
 }
@@ -1521,51 +1544,50 @@ static int readdir0(const char *path, void *buf, fuse_fill_dir_t filler, off_t o
 	struct wfs_dentry *direntry;
 	int original_offset = offset;
 	int disk = 0;
-	int filler_offset = 0;
+	off_t filler_offset = 0;
+	
+	// return 0 if empty directory or if no more direntries
 	while (1)
 	{
-		if(disk < numdisks) {
-			direntry = findNextDir0(directory, offset, &next_offset,disk );
-		}
-		else {
-			direntry = NULL;
-		}
+		direntry = findNextDir0(directory, offset, &next_offset,disk );
+		filler_offset += sizeof(struct wfs_dentry);
+		
+		//if the directry on this disk is empty
 		if (direntry == NULL)
 		{
+			disk++;
+			// if it is the end of the disk then exit
 			if(disk >= numdisks){
-				printf("empty dir\n");
 				return 0;
 			}
-			disk++;
 			continue;
 		}
 
-		printf("readdir(): direntry->name: %s num: %d\n, next_offset: %ld\n", direntry->name, direntry->num, next_offset);
-		if (filler(buf, direntry->name, NULL, filler_offset) != 0)
+
+		printf("readdir0(): disk: %d direntry->name: %s num: %d\n, next_offset: %ld filler_offset: %ld\n", 
+									disk, direntry->name, direntry->num, next_offset, filler_offset);
+
+		
+		if (filler(buf, direntry->name, NULL, 0) != 0)
 		{
 			printf("wfs_readdir(): filler returned nonzero\n");
 			return 0;
 		}
-		filler_offset++;
 
+		// if at the end of the dir for this disk
 		if (next_offset == 0)
 		{
-			if(original_offset > 0){
-				offset = 0;
-				printf("original offset > 0\n");
-				continue;
-			}
-			if(disk >= numdisks){
-				printf("wfs_readir(): no more files\n");
+			disk++;
+			if(disk == numdisks){
 				return 0;
 			}
-			disk++;
 		}
+
 		offset = next_offset;
 	}
 
 	printf("wfs_readdir(): failed somehow\n");
-	return -1;
+	return 0;
 }
 // Return one or more directory entries (struct dirent) to the caller
 // It is related to, but not identical to, the readdir(2) and getdents(2) system calls, and the readdir(3) library function. Because of its complexity, it is described separately below. Required for essentially any filesystem,
