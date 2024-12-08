@@ -297,6 +297,7 @@ static Path *splitPath(char *path)
 		// If size > 0
 		else
 		{
+			
 			ret_path->path_components = realloc(ret_path->path_components, sizeof(char *) * (ret_path->size + 1));
 			if (ret_path->path_components == NULL)
 			{
@@ -1103,11 +1104,13 @@ static int wfs_mkdir1(const char *path, mode_t mode)
 		{
 			printf("Linking error\n");
 		}
+		
 		free(dir_name);
 		for(int i = 0; i < p->size;i++) {
 			free(p->path_components[i]);
 		}
 		free(p);
+		free(malleable_path);
 	}
 	
 	return 0;
@@ -1205,7 +1208,7 @@ static int wfs_unlink(const char *path)
 			if (file->blocks[IND_BLOCK] != -1)
 			{
 				struct IndirectBlock *indirect_block = (struct IndirectBlock *)(mappings[disk] + superblocks[disk]->d_blocks_ptr + file->blocks[IND_BLOCK]);
-				printf("freeing indreict blocks\n");
+				printf("freeing indireict blocks\n");
 				for (int i = 0; i < BLOCK_SIZE/sizeof(off_t); i++)
 				{
 					if(indirect_block->blocks[i] == -1){
@@ -1308,6 +1311,11 @@ static int wfs_mknod1(const char *path, mode_t mode, dev_t rdev)
 		{
 			printf("Linking error\n");
 		}
+		for(int i =0; i < p->size;i++) {
+			free(p->path_components[i]);
+		}
+		free(p);
+		free(dir_name);
 	}
 
 	printf("mknod done\n");
@@ -1707,6 +1715,11 @@ static int read1(const char* path, char* buf, size_t size, off_t offset) {
 	else {
 		printf("Exit because of eof\n");
 	}
+
+	for(int i =0;i < p->size;i++) {
+		free(p->path_components[i]);
+	}
+	free(p);
 	return bytes_read;
 }
 
@@ -2053,6 +2066,10 @@ static int write_raid1(const char *path, const char *buf, size_t size, off_t off
 			}	
 		}
 		my_file->size += written_bytes;	
+		for(int i =0;i<p->size;i++) {
+			free(p->path_components[i]);
+		}
+		free(p);
 	}
 	
 	return written_bytes;
@@ -2105,6 +2122,13 @@ static int wfs_getattr(const char *path, struct stat *stbuf)
 	stbuf->st_blksize = BLOCK_SIZE;
 	stbuf->st_blocks = my_inode->size / BLOCK_SIZE;
 	printf("wfs_getattr done\n");
+
+	for(int i =0;i < p->size;i++) {
+		free(p->path_components[i]);
+	}
+	free(p);
+	free(malleable_path);
+	
 	return 0;
 }
 

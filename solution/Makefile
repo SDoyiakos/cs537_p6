@@ -1,6 +1,6 @@
 BINS = wfs mkfs
 CC = gcc
-CFLAGS = -Wall -pedantic -std=gnu18 -g
+CFLAGS = -Wall -pedantic -Werror -std=gnu18 -g
 FUSE_CFLAGS = `pkg-config fuse --cflags --libs`
 
 
@@ -16,7 +16,7 @@ run_wfs:
 	./wfs disk.img disk1.img
 
 run_wfs_valgrind:
-	valgrind ./wfs disk.img disk1.img -f -s mnt
+	valgrind --leak-check=full ./wfs disk.img disk1.img -f -s mnt
 
 redo_disks: mkfs
 	$(MAKE) remove_disks
