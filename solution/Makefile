@@ -16,7 +16,7 @@ run_wfs:
 	./wfs disk.img disk1.img
 
 run_wfs_valgrind:
-	valgrind ./wfs disk.img disk1.img
+	valgrind ./wfs disk.img disk1.img -f -s mnt
 
 redo_disks: mkfs
 	$(MAKE) remove_disks
